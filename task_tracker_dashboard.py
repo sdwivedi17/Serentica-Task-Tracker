@@ -1,28 +1,58 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+import plotly.express as px
 from io import BytesIO
 import os
-import plotly.express as px
 from streamlit_autorefresh import st_autorefresh
 
-# ================= CONFIG =================
-st.set_page_config(page_title="Serentica Renewables | Task Tracker", layout="wide")
+# =====================================================
+# CONFIG
+# =====================================================
+st.set_page_config(
+    page_title="Serentica Renewables | Task Dashboard",
+    layout="wide"
+)
 st_autorefresh(interval=30000, key="refresh")
 
-ATTACH_DIR = "attachments"
-os.makedirs(ATTACH_DIR, exist_ok=True)
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-# ================= LOGIN =================
+DATA_FILE = "tasks.csv"
+
+COLUMNS = [
+    "id", "owner", "assignee", "department",
+    "task", "start_date", "due_date",
+    "status", "priority", "created_at"
+]
+
+if not os.path.exists(DATA_FILE):
+    pd.DataFrame(columns=COLUMNS).to_csv(DATA_FILE, index=False)
+
+# =====================================================
+# DATA FUNCTIONS
+# =====================================================
+def load_tasks():
+    df = pd.read_csv(DATA_FILE)
+    if not df.empty:
+        df["start_date"] = pd.to_datetime(df["start_date"])
+        df["due_date"] = pd.to_datetime(df["due_date"])
+    return df
+
+def save_tasks(df):
+    df.to_csv(DATA_FILE, index=False)
+
+# =====================================================
+# LOGIN
+# =====================================================
 if "user" not in st.session_state:
     st.session_state.user = None
 
 st.sidebar.title(" Login")
+
 if not st.session_state.user:
-    username = st.sidebar.text_input("Enter your name")
-    if st.sidebar.button("Login") and username:
-        st.session_state.user = username
+    user = st.sidebar.text_input("Your Name")
+    if st.sidebar.button("Login") and user:
+        st.session_state.user = user
         st.rerun()
 else:
     st.sidebar.success(f"Logged in as {st.session_state.user}")
@@ -35,115 +65,202 @@ if not st.session_state.user:
 
 USER = st.session_state.user
 
-# ================= DATABASE =================
-conn = sqlite3.connect("task_tracker.db", check_same_thread=False)
-cursor = conn.cursor()
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner TEXT,
-    assignee TEXT,
-    department TEXT,
-    task TEXT,
-    due_date DATE,
-    status TEXT,
-    priority TEXT,
-    attachment TEXT,
-    remarks TEXT,
-    created_at TEXT
+# =====================================================
+# NAVIGATION
+# =====================================================
+st.sidebar.markdown("---")
+page = st.sidebar.radio(
+    "Navigation",
+    [
+        " Home",
+        " My Tasks",
+        " Analytics",
+        " Calendar View",
+        " Gantt View"
+    ]
 )
-""")
-conn.commit()
 
-# ================= FUNCTIONS =================
-def load_tasks():
-    return pd.read_sql("SELECT * FROM tasks", conn)
-
-def add_task(row):
-    cursor.execute("""
-        INSERT INTO tasks VALUES (NULL,?,?,?,?,?,?,?,?,?,?)
-    """, row)
-    conn.commit()
-
-def update_status(tid, status):
-    cursor.execute("UPDATE tasks SET status=? WHERE id=?", (status, tid))
-    conn.commit()
-
-# ================= ADD TASK =================
-st.sidebar.header(" Add Task")
-
-with st.sidebar.form("add_task"):
-    assignee = st.text_input("Assignee Name")
-    department = st.selectbox("Department", ["Solar", "Wind", "Grid", "Trading", "Operations"])
-    task = st.text_area("Task Description")
-    due = st.date_input("Expected Completion Date")
-    status = st.selectbox("Status", ["Pending", "In Progress", "Completed"])
-    priority = st.selectbox("Priority", ["Low", "Medium", "High"])
-    file = st.file_uploader("Attach File")
-    remarks = st.text_input("Remarks")
-    submit = st.form_submit_button("Add Task")
-
-if submit:
-    filename = None
-    if file:
-        filename = f"{datetime.now().timestamp()}_{file.name}"
-        with open(os.path.join(ATTACH_DIR, filename), "wb") as f:
-            f.write(file.getbuffer())
-
-    add_task((
-        USER, assignee, department, task, due,
-        status, priority, filename, remarks,
-        datetime.now().isoformat()
-    ))
-    st.sidebar.success("Task Added")
-    st.rerun()
-
-# ================= DASHBOARD =================
-st.title(" Serentica Renewables – Live Task Tracker")
-
+# =====================================================
+# LOAD DATA
+# =====================================================
 df = load_tasks()
-if USER.lower() != "admin":
+
+if USER.lower() != "admin" and not df.empty:
     df = df[df["owner"] == USER]
 
-df["due_date"] = pd.to_datetime(df["due_date"])
-df["overdue"] = (df["due_date"].dt.date < date.today()) & (df["status"] != "Completed")
-
-# ================= ANALYTICS =================
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Total Tasks", len(df))
-c2.metric("Completed", (df["status"] == "Completed").sum())
-c3.metric("Pending", (df["status"] == "Pending").sum())
-c4.metric("Overdue", df["overdue"].sum())
-
-col1, col2 = st.columns(2)
-col1.plotly_chart(px.pie(df, names="status", title="Status Distribution"), use_container_width=True)
-col2.plotly_chart(px.bar(df, x="priority", title="Tasks by Priority"), use_container_width=True)
-
-# ================= TASK TABLE =================
-st.subheader(" Tasks")
-st.dataframe(df.drop(columns=["attachment"]), use_container_width=True)
-
-# ================= UPDATE STATUS =================
-st.subheader(" Update Task Status")
-task_id = st.selectbox("Task ID", df["id"].tolist())
-new_status = st.selectbox("New Status", ["Pending", "In Progress", "Completed"])
-if st.button("Update"):
-    update_status(task_id, new_status)
-    st.success("Updated")
-    st.rerun()
-
-# ================= DOWNLOAD =================
-buffer = BytesIO()
-df.to_excel(buffer, index=False, engine="openpyxl")
-buffer.seek(0)
-
-st.download_button(
-    " Download Excel",
-    buffer,
-    file_name="Serentica_Task_Tracker.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+# =====================================================
+# HEADER
+# =====================================================
+st.markdown(
+    f"""
+    <h2>Hello, {USER} </h2>
+    <p style="color:grey;">Renewable operations task dashboard</p>
+    """,
+    unsafe_allow_html=True
 )
 
-st.caption("Live • Multi-user • Auto-refresh")
+st.markdown("---")
 
+# =====================================================
+# HOME
+# =====================================================
+if page == " Home":
+
+    if df.empty:
+        st.info("No tasks available.")
+        st.stop()
+
+    overdue = (
+        (df["due_date"].dt.date < date.today()) &
+        (df["status"] != "Completed")
+    ).sum()
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Tasks", len(df))
+    c2.metric("Completed", (df["status"] == "Completed").sum())
+    c3.metric("In Progress", (df["status"] == "In Progress").sum())
+    c4.metric("Overdue", overdue)
+
+    st.markdown("###  Task Buckets")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.subheader(" To Do")
+        st.dataframe(df[df["status"] == "To Do"], use_container_width=True)
+
+    with col2:
+        st.subheader(" In Progress")
+        st.dataframe(df[df["status"] == "In Progress"], use_container_width=True)
+
+    with col3:
+        st.subheader(" Completed")
+        st.dataframe(df[df["status"] == "Completed"], use_container_width=True)
+
+# =====================================================
+# TASK CREATION
+# =====================================================
+elif page == " My Tasks":
+
+    st.subheader("➕ Create New Task")
+
+    with st.form("add_task"):
+        assignee = st.text_input("Assignee")
+        department = st.selectbox(
+            "Department",
+            [
+                "Solar", "Wind", "Trading",
+                "Operations", "Finance",
+                "Grid & Scheduling", "Asset Management"
+            ]
+        )
+        task = st.text_area("Task Description")
+        start_date = st.date_input("Start Date", date.today())
+        due_date = st.date_input("Due Date", date.today() + timedelta(days=3))
+        status = st.selectbox("Status", ["To Do", "In Progress", "Completed"])
+        priority = st.selectbox("Priority", ["Low", "Medium", "High"])
+        submit = st.form_submit_button("Add Task")
+
+    if submit:
+        new_task = {
+            "id": int(datetime.now().timestamp()),
+            "owner": USER,
+            "assignee": assignee,
+            "department": department,
+            "task": task,
+            "start_date": start_date,
+            "due_date": due_date,
+            "status": status,
+            "priority": priority,
+            "created_at": datetime.now().isoformat()
+        }
+        df = pd.concat([df, pd.DataFrame([new_task])], ignore_index=True)
+        save_tasks(df)
+        st.success("Task added successfully")
+        st.rerun()
+
+    st.markdown("###  Your Tasks")
+    st.dataframe(df, use_container_width=True)
+
+# =====================================================
+# ANALYTICS
+# =====================================================
+elif page == " Analytics":
+
+    if df.empty:
+        st.info("No data available.")
+        st.stop()
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.plotly_chart(
+            px.pie(df, names="status", title="Task Status Distribution"),
+            use_container_width=True
+        )
+
+    with col2:
+        st.plotly_chart(
+            px.bar(
+                df,
+                x="department",
+                title="Department-wise Workload",
+                color="department"
+            ),
+            use_container_width=True
+        )
+
+# =====================================================
+# CALENDAR VIEW
+# =====================================================
+elif page == " Calendar View":
+
+    st.subheader(" Task Calendar")
+
+    if df.empty:
+        st.info("No tasks available.")
+        st.stop()
+
+    df["due_day"] = df["due_date"].dt.date
+
+    selected_day = st.date_input("Select Date", date.today())
+
+    day_tasks = df[df["due_day"] == selected_day]
+
+    if day_tasks.empty:
+        st.info("No tasks scheduled for this day.")
+    else:
+        st.dataframe(day_tasks, use_container_width=True)
+
+# =====================================================
+# GANTT VIEW
+# =====================================================
+elif page == " Gantt View":
+
+    st.subheader(" Task Timeline (Gantt View)")
+
+    if df.empty:
+        st.info("No tasks available.")
+        st.stop()
+
+    gantt_df = df.copy()
+    gantt_df["Task"] = gantt_df["task"]
+    gantt_df["Start"] = gantt_df["start_date"]
+    gantt_df["Finish"] = gantt_df["due_date"]
+
+    fig = px.timeline(
+        gantt_df,
+        x_start="Start",
+        x_end="Finish",
+        y="Task",
+        color="department",
+        title="Project Timeline – Renewable Operations"
+    )
+
+    fig.update_yaxes(autorange="reversed")
+    st.plotly_chart(fig, use_container_width=True)
+
+# =====================================================
+# FOOTER
+# =====================================================
+st.caption(" Serentica Renewables • Live • Multi-user • Gantt • Calendar")
