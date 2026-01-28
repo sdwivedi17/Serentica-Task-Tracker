@@ -18,7 +18,7 @@ os.makedirs(ATTACH_DIR, exist_ok=True)
 if "user" not in st.session_state:
     st.session_state.user = None
 
-st.sidebar.title("🔐 Login")
+st.sidebar.title(" Login")
 if not st.session_state.user:
     username = st.sidebar.text_input("Enter your name")
     if st.sidebar.button("Login") and username:
@@ -71,7 +71,7 @@ def update_status(tid, status):
     conn.commit()
 
 # ================= ADD TASK =================
-st.sidebar.header("➕ Add Task")
+st.sidebar.header(" Add Task")
 
 with st.sidebar.form("add_task"):
     assignee = st.text_input("Assignee Name")
@@ -100,7 +100,7 @@ if submit:
     st.rerun()
 
 # ================= DASHBOARD =================
-st.title("⚡ Serentica Renewables – Live Task Tracker")
+st.title(" Serentica Renewables – Live Task Tracker")
 
 df = load_tasks()
 if USER.lower() != "admin":
@@ -121,11 +121,11 @@ col1.plotly_chart(px.pie(df, names="status", title="Status Distribution"), use_c
 col2.plotly_chart(px.bar(df, x="priority", title="Tasks by Priority"), use_container_width=True)
 
 # ================= TASK TABLE =================
-st.subheader("📋 Tasks")
+st.subheader(" Tasks")
 st.dataframe(df.drop(columns=["attachment"]), use_container_width=True)
 
 # ================= UPDATE STATUS =================
-st.subheader("🔄 Update Task Status")
+st.subheader(" Update Task Status")
 task_id = st.selectbox("Task ID", df["id"].tolist())
 new_status = st.selectbox("New Status", ["Pending", "In Progress", "Completed"])
 if st.button("Update"):
@@ -139,10 +139,11 @@ df.to_excel(buffer, index=False, engine="openpyxl")
 buffer.seek(0)
 
 st.download_button(
-    "⬇ Download Excel",
+    " Download Excel",
     buffer,
     file_name="Serentica_Task_Tracker.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
 st.caption("Live • Multi-user • Auto-refresh")
+
