@@ -47,7 +47,7 @@ def save_tasks(df):
 if "user" not in st.session_state:
     st.session_state.user = None
 
-st.sidebar.title(" Login")
+st.sidebar.title("🔐 Login")
 
 if not st.session_state.user:
     user = st.sidebar.text_input("Your Name")
@@ -72,11 +72,11 @@ st.sidebar.markdown("---")
 page = st.sidebar.radio(
     "Navigation",
     [
-        " Home",
-        " My Tasks",
-        " Analytics",
-        " Calendar View",
-        " Gantt View"
+        "🏠 Home",
+        "📝 My Tasks",
+        "📊 Analytics",
+        "🗓 Calendar View",
+        "🧱 Gantt View"
     ]
 )
 
@@ -93,7 +93,7 @@ if USER.lower() != "admin" and not df.empty:
 # =====================================================
 st.markdown(
     f"""
-    <h2>Hello, {USER} </h2>
+    <h2>Hello, {USER} 👋</h2>
     <p style="color:grey;">Renewable operations task dashboard</p>
     """,
     unsafe_allow_html=True
@@ -104,7 +104,7 @@ st.markdown("---")
 # =====================================================
 # HOME
 # =====================================================
-if page == " Home":
+if page == "🏠 Home":
 
     if df.empty:
         st.info("No tasks available.")
@@ -121,26 +121,26 @@ if page == " Home":
     c3.metric("In Progress", (df["status"] == "In Progress").sum())
     c4.metric("Overdue", overdue)
 
-    st.markdown("###  Task Buckets")
+    st.markdown("### 📋 Task Buckets")
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.subheader(" To Do")
+        st.subheader("🟡 To Do")
         st.dataframe(df[df["status"] == "To Do"], use_container_width=True)
 
     with col2:
-        st.subheader(" In Progress")
+        st.subheader("🔵 In Progress")
         st.dataframe(df[df["status"] == "In Progress"], use_container_width=True)
 
     with col3:
-        st.subheader(" Completed")
+        st.subheader("🟢 Completed")
         st.dataframe(df[df["status"] == "Completed"], use_container_width=True)
 
 # =====================================================
 # TASK CREATION
 # =====================================================
-elif page == " My Tasks":
+elif page == "📝 My Tasks":
 
     st.subheader("➕ Create New Task")
 
@@ -179,13 +179,13 @@ elif page == " My Tasks":
         st.success("Task added successfully")
         st.rerun()
 
-    st.markdown("###  Your Tasks")
+    st.markdown("### 📋 Your Tasks")
     st.dataframe(df, use_container_width=True)
 
 # =====================================================
 # ANALYTICS
 # =====================================================
-elif page == " Analytics":
+elif page == "📊 Analytics":
 
     if df.empty:
         st.info("No data available.")
@@ -213,9 +213,9 @@ elif page == " Analytics":
 # =====================================================
 # CALENDAR VIEW
 # =====================================================
-elif page == " Calendar View":
+elif page == "🗓 Calendar View":
 
-    st.subheader(" Task Calendar")
+    st.subheader("🗓 Task Calendar")
 
     if df.empty:
         st.info("No tasks available.")
@@ -235,9 +235,9 @@ elif page == " Calendar View":
 # =====================================================
 # GANTT VIEW
 # =====================================================
-elif page == " Gantt View":
+elif page == "🧱 Gantt View":
 
-    st.subheader(" Task Timeline (Gantt View)")
+    st.subheader("🧱 Task Timeline (Gantt View)")
 
     if df.empty:
         st.info("No tasks available.")
