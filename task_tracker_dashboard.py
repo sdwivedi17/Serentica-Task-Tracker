@@ -3,12 +3,13 @@ import pandas as pd
 from datetime import datetime, date, timedelta
 import plotly.express as px
 import os
+import base64
 
 # =====================================================
 # PAGE CONFIG
 # =====================================================
 st.set_page_config(
-    page_title="Serentica Renewables | PM Dashboard",
+    page_title="Serentica Renewables | Task Tracker Dashboard",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -17,7 +18,18 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(BASE_DIR)
 
 DATA_FILE = "tasks.csv"
-BG_IMAGE = "assets/IMG_4203.jpeg"
+BG_IMAGE_PATH = "assets/IMG_4203.jpeg"
+
+# =====================================================
+# UTIL: LOAD BACKGROUND IMAGE AS BASE64 (FIX)
+# =====================================================
+def get_base64_bg(path):
+    if not os.path.exists(path):
+        return ""
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+BG_BASE64 = get_base64_bg(BG_IMAGE_PATH)
 
 # =====================================================
 # DATA SETUP (SAFE)
@@ -34,16 +46,13 @@ if not os.path.exists(DATA_FILE):
 def load_tasks():
     df = pd.read_csv(DATA_FILE)
 
-    # Ensure all columns exist
     for col in COLUMNS:
         if col not in df.columns:
             df[col] = None
 
-    # SAFE date parsing (THIS FIXES YOUR ERROR)
     df["start_date"] = pd.to_datetime(df["start_date"], errors="coerce")
     df["due_date"] = pd.to_datetime(df["due_date"], errors="coerce")
 
-    # Fill missing dates safely
     df["start_date"] = df["start_date"].fillna(pd.Timestamp.today())
     df["due_date"] = df["due_date"].fillna(df["start_date"] + pd.Timedelta(days=3))
 
@@ -68,36 +77,37 @@ if "settings" not in st.session_state:
     }
 
 # =====================================================
-# LOGIN SCREEN
+# LOGIN SCREEN (CENTERED + BACKGROUND FIXED)
 # =====================================================
 if st.session_state.user is None:
 
-    st.markdown(
-        f"""
-        <style>
-        .stApp {{
-            background-image: url("{BG_IMAGE}");
-            background-size: cover;
-            background-position: center;
-        }}
-        .login-box {{
-            background: rgba(255,255,255,0.94);
-            padding: 2.5rem;
-            border-radius: 14px;
-            width: 360px;
-            margin: auto;
-            margin-top: 15vh;
-            box-shadow: 0px 10px 30px rgba(0,0,0,0.25);
-            text-align: center;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    if BG_BASE64:
+        st.markdown(
+            f"""
+            <style>
+            .stApp {{
+                background-image: url("data:image/jpg;base64,{BG_BASE64}");
+                background-size: cover;
+                background-position: center;
+            }}
+            .login-box {{
+                background: rgba(255,255,255,0.94);
+                padding: 2.5rem;
+                border-radius: 16px;
+                width: 360px;
+                margin: auto;
+                margin-top: 15vh;
+                box-shadow: 0px 10px 30px rgba(0,0,0,0.25);
+                text-align: center;
+            }}
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
 
     st.markdown('<div class="login-box">', unsafe_allow_html=True)
-    st.markdown("## ⚡ Serentica Renewables")
-    st.markdown("### Project Management Portal")
+    st.markdown("##  Serentica Renewables")
+    st.markdown("### Task Tracker Portal")
 
     username = st.text_input("👤 Enter your name")
     if st.button("🔐 Login") and username.strip():
@@ -173,7 +183,7 @@ if page == "🏠 Overview":
         st.dataframe(df[df["status"] == status], use_container_width=True)
 
 # =====================================================
-# TASK BOARD
+# TASK BOARD (ADD + DELETE)
 # =====================================================
 elif page == "📝 Task Board":
 
@@ -186,12 +196,8 @@ elif page == "📝 Task Board":
         task = st.text_area("Task Description")
         start_date = st.date_input("Start Date", date.today())
         due_date = st.date_input("Expected Completion Date", date.today() + timedelta(days=5))
-        status = st.selectbox("Status", ["To Do", "In Progress", "Completed"],
-                              index=["To Do", "In Progress", "Completed"].index(
-                                  st.session_state.settings["default_status"]))
-        priority = st.selectbox("Priority", ["Low", "Medium", "High"],
-                                index=["Low", "Medium", "High"].index(
-                                    st.session_state.settings["default_priority"]))
+        status = st.selectbox("Status", ["To Do", "In Progress", "Completed"])
+        priority = st.selectbox("Priority", ["Low", "Medium", "High"])
         submit = st.form_submit_button("➕ Add Task")
 
     if submit:
@@ -212,6 +218,17 @@ elif page == "📝 Task Board":
         st.success("Task added successfully")
         st.rerun()
 
+    st.markdown("### 🗑 Delete Task")
+
+    if not df.empty:
+        delete_id = st.selectbox("Select Task ID to delete", df["task_id"].tolist())
+        if st.button("❌ Delete Task"):
+            df = df[df["task_id"] != delete_id]
+            save_tasks(df)
+            st.warning("Task deleted")
+            st.rerun()
+
+    st.markdown("### 📋 Current Tasks")
     st.dataframe(df, use_container_width=True)
 
 # =====================================================
@@ -219,11 +236,8 @@ elif page == "📝 Task Board":
 # =====================================================
 elif page == "👤 Assignee View":
 
-    if df.empty:
-        st.info("No tasks available.")
-    else:
-        assignee = st.selectbox("Select Assignee", sorted(df["assignee"].dropna().unique()))
-        st.dataframe(df[df["assignee"] == assignee], use_container_width=True)
+    assignee = st.selectbox("Select Assignee", sorted(df["assignee"].dropna().unique()))
+    st.dataframe(df[df["assignee"] == assignee], use_container_width=True)
 
 # =====================================================
 # CALENDAR
@@ -262,8 +276,6 @@ elif page == "📊 Analytics":
 # =====================================================
 elif page == "⚙️ Settings":
 
-    st.subheader("⚙️ Dashboard Settings")
-
     st.session_state.settings["show_completed"] = st.toggle(
         "Show Completed Tasks", st.session_state.settings["show_completed"])
 
@@ -274,18 +286,14 @@ elif page == "⚙️ Settings":
         "Enable Gantt View", st.session_state.settings["enable_gantt"])
 
     st.session_state.settings["default_status"] = st.selectbox(
-        "Default Task Status", ["To Do", "In Progress", "Completed"],
-        index=["To Do", "In Progress", "Completed"].index(
-            st.session_state.settings["default_status"]))
+        "Default Task Status", ["To Do", "In Progress", "Completed"])
 
     st.session_state.settings["default_priority"] = st.selectbox(
-        "Default Task Priority", ["Low", "Medium", "High"],
-        index=["Low", "Medium", "High"].index(
-            st.session_state.settings["default_priority"]))
+        "Default Task Priority", ["Low", "Medium", "High"])
 
-    st.success("Settings applied instantly")
+    st.success("Settings applied immediately")
 
 # =====================================================
 # FOOTER
 # =====================================================
-st.caption("⚡ Serentica Renewables • Stable • Cloud-Safe • Modern PM Dashboard")
+st.caption(" Serentica Renewables • Cloud-safe • Background fixed • Delete enabled")
