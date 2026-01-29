@@ -54,11 +54,7 @@ if "theme" not in st.session_state:
 # =====================================================
 if st.session_state.theme == "dark":
     st.markdown(
-        """
-        <style>
-        .stApp { background-color:#0E1117; color:white; }
-        </style>
-        """,
+        "<style>.stApp { background-color:#0E1117; color:white; }</style>",
         unsafe_allow_html=True
     )
 
@@ -155,22 +151,26 @@ if st.session_state.role == "Admin":
             st.rerun()
 
 # =====================================================
-# EDIT / DELETE TASKS
+# EDIT / DELETE TASKS (FIXED SELECTBOX)
 # =====================================================
 st.subheader("📝 Task List")
 
 if not df.empty:
 
-    df["display_due"] = df["due_date"].apply(
-        lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "TBD"
+    # Create stable label → id mapping
+    df["label"] = df.apply(
+        lambda x: f"{x['task']} | {x['assignee']} | {x['department']}",
+        axis=1
     )
 
-    selected_id = st.selectbox(
+    label_to_id = dict(zip(df["label"], df["task_id"]))
+
+    selected_label = st.selectbox(
         "Select Task",
-        df["task_id"],
-        format_func=lambda x: df[df["task_id"] == x]["task"].iloc[0]
+        list(label_to_id.keys())
     )
 
+    selected_id = label_to_id[selected_label]
     task_row = df[df["task_id"] == selected_id].iloc[0]
 
     with st.form("edit_task"):
@@ -201,7 +201,13 @@ if not df.empty:
             st.warning("Task deleted")
             st.rerun()
 
-    st.dataframe(df.drop(columns=["display_due"]), use_container_width=True)
+    # Display table
+    display_df = df.drop(columns=["label"])
+    display_df["Expected Completion"] = display_df["due_date"].apply(
+        lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "TBD"
+    )
+
+    st.dataframe(display_df, use_container_width=True)
 
 else:
     st.info("No tasks available")
