@@ -28,7 +28,7 @@ if not os.path.exists(DATA_FILE):
     pd.DataFrame(columns=COLUMNS).to_csv(DATA_FILE, index=False)
 
 # =====================================================
-# DATE HANDLING (CRITICAL & SAFE)
+# DATE HANDLING
 # =====================================================
 def load_tasks():
     df = pd.read_csv(DATA_FILE)
@@ -38,14 +38,14 @@ def load_tasks():
     return df
 
 def save_tasks(df):
-    df_to_save = df.copy()
-    df_to_save["start_date"] = df_to_save["start_date"].apply(
+    df_save = df.copy()
+    df_save["start_date"] = df_save["start_date"].apply(
         lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else ""
     )
-    df_to_save["due_date"] = df_to_save["due_date"].apply(
+    df_save["due_date"] = df_save["due_date"].apply(
         lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else ""
     )
-    df_to_save.to_csv(DATA_FILE, index=False)
+    df_save.to_csv(DATA_FILE, index=False)
 
 # =====================================================
 # SESSION STATE
@@ -113,20 +113,18 @@ if st.session_state.role == "User":
 # =====================================================
 today_ts = pd.Timestamp(date.today())
 
-total_tasks = len(df)
-completed_tasks = (df["status"] == "Completed").sum()
-tbd_tasks = df["due_date"].isna().sum()
-overdue_tasks = (
-    df["due_date"].notna() &
-    (df["due_date"] < today_ts) &
-    (df["status"] != "Completed")
-).sum()
-
 k1, k2, k3, k4 = st.columns(4)
-k1.metric("Total Tasks", total_tasks)
-k2.metric("Completed", completed_tasks)
-k3.metric("TBD", tbd_tasks)
-k4.metric("Overdue", overdue_tasks)
+k1.metric("Total Tasks", len(df))
+k2.metric("Completed", (df["status"] == "Completed").sum())
+k3.metric("TBD", df["due_date"].isna().sum())
+k4.metric(
+    "Overdue",
+    (
+        df["due_date"].notna()
+        & (df["due_date"] < today_ts)
+        & (df["status"] != "Completed")
+    ).sum()
+)
 
 # =====================================================
 # ADD TASK (ADMIN ONLY)
@@ -168,9 +166,42 @@ if st.session_state.role == "Admin":
             st.rerun()
 
 # =====================================================
-# TASK TABLE (DATES ALWAYS SHOWN)
+# DELETE TASK (VISIBLE & SAFE)
 # =====================================================
-st.subheader("Task List")
+st.subheader("🗑 Delete Task")
+
+if st.session_state.role == "Admin" and not df.empty:
+
+    # Create safe labels
+    df["delete_label"] = df.apply(
+        lambda x: f"{x['task']} | {x['assignee']} | {x['department']}",
+        axis=1
+    )
+
+    label_to_id = dict(zip(df["delete_label"], df["task_id"]))
+
+    selected_label = st.selectbox(
+        "Select task to delete",
+        list(label_to_id.keys())
+    )
+
+    selected_id = label_to_id[selected_label]
+
+    st.warning("This action is permanent.")
+
+    if st.button("❌ Delete Selected Task"):
+        df = df[df["task_id"] != selected_id]
+        save_tasks(df)
+        st.success("Task deleted successfully")
+        st.rerun()
+
+elif st.session_state.role == "Admin":
+    st.info("No tasks available to delete")
+
+# =====================================================
+# TASK TABLE
+# =====================================================
+st.subheader("📋 Task List")
 
 if not df.empty:
     display_df = df.copy()
@@ -194,7 +225,7 @@ else:
 # =====================================================
 # GANTT VIEW
 # =====================================================
-st.subheader("Gantt Chart")
+st.subheader("🧱 Gantt Chart")
 
 gantt_df = df[df["due_date"].notna()]
 
