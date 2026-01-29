@@ -111,8 +111,8 @@ if st.session_state.user is None:
         )
 
     st.markdown('<div class="login-box">', unsafe_allow_html=True)
-    st.markdown("##⚡ Serentica Renewables")
-    st.markdown("### Task Manager Portal")
+    st.markdown(" Serentica Renewables")
+    st.markdown(" Task Manager Portal")
 
     username = st.text_input("👤 Enter your name")
     if st.button("🔐 Login") and username.strip():
@@ -256,3 +256,4 @@ elif page == "⚙️ Settings":
 # FOOTER
 # =====================================================
 st.caption(" Serentica Renewables • Market & Operations • Task Manager")
+
