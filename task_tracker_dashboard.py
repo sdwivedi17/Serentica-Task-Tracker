@@ -9,7 +9,7 @@ import base64
 # PAGE CONFIG
 # =====================================================
 st.set_page_config(
-    page_title="Serentica Renewables | Task Tracker Dashboard",
+    page_title="Serentica Renewables | Task Manager",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -18,10 +18,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(BASE_DIR)
 
 DATA_FILE = "tasks.csv"
-BG_IMAGE_PATH = "assets/IMG_4203.jpeg"
+BG_IMAGE_PATH = "assets/renewable_bg.jpg"
 
 # =====================================================
-# UTIL: LOAD BACKGROUND IMAGE AS BASE64 (FIX)
+# BACKGROUND IMAGE (BASE64)
 # =====================================================
 def get_base64_bg(path):
     if not os.path.exists(path):
@@ -32,7 +32,7 @@ def get_base64_bg(path):
 BG_BASE64 = get_base64_bg(BG_IMAGE_PATH)
 
 # =====================================================
-# DATA SETUP (SAFE)
+# DATA SETUP (SAFE + NORMALIZED)
 # =====================================================
 COLUMNS = [
     "task_id", "owner", "assignee", "department",
@@ -46,10 +46,15 @@ if not os.path.exists(DATA_FILE):
 def load_tasks():
     df = pd.read_csv(DATA_FILE)
 
+    # Ensure columns
     for col in COLUMNS:
         if col not in df.columns:
             df[col] = None
 
+    #  CRITICAL FIX: normalize task_id
+    df["task_id"] = df["task_id"].astype(str)
+
+    # Safe date parsing
     df["start_date"] = pd.to_datetime(df["start_date"], errors="coerce")
     df["due_date"] = pd.to_datetime(df["due_date"], errors="coerce")
 
@@ -77,7 +82,7 @@ if "settings" not in st.session_state:
     }
 
 # =====================================================
-# LOGIN SCREEN (CENTERED + BACKGROUND FIXED)
+# LOGIN SCREEN
 # =====================================================
 if st.session_state.user is None:
 
@@ -106,8 +111,8 @@ if st.session_state.user is None:
         )
 
     st.markdown('<div class="login-box">', unsafe_allow_html=True)
-    st.markdown("##  Serentica Renewables")
-    st.markdown("### Task Tracker Portal")
+    st.markdown("##⚡ Serentica Renewables")
+    st.markdown("### Task Manager Portal")
 
     username = st.text_input("👤 Enter your name")
     if st.button("🔐 Login") and username.strip():
@@ -132,7 +137,7 @@ if not st.session_state.settings["show_completed"]:
 # =====================================================
 # SIDEBAR
 # =====================================================
-st.sidebar.title("⚡ Serentica")
+st.sidebar.title(" Serentica")
 st.sidebar.success(f"Logged in as {USER}")
 
 pages = ["🏠 Overview", "📝 Task Board", "👤 Assignee View", "📊 Analytics", "⚙️ Settings"]
@@ -155,37 +160,18 @@ if st.sidebar.button("🚪 Logout"):
 st.markdown(
     f"""
     <h2>Hello, {USER} 👋</h2>
-    <p style="color:grey;">Modern renewable project management</p>
+    <p style="color:grey;">Task Tracker</p>
     """,
     unsafe_allow_html=True
 )
 st.markdown("---")
 
 # =====================================================
-# OVERVIEW
+# TASK BOARD (ADD + DELETE FIXED)
 # =====================================================
-if page == "🏠 Overview":
+if page == "📝 Task Board":
 
-    if df.empty:
-        st.info("No tasks yet. Add your first task.")
-        st.stop()
-
-    overdue = ((df["due_date"].dt.date < date.today()) & (df["status"] != "Completed")).sum()
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Tasks", len(df))
-    c2.metric("Completed", (df["status"] == "Completed").sum())
-    c3.metric("In Progress", (df["status"] == "In Progress").sum())
-    c4.metric("Overdue", overdue)
-
-    for status in ["To Do", "In Progress", "Completed"]:
-        st.subheader(status)
-        st.dataframe(df[df["status"] == status], use_container_width=True)
-
-# =====================================================
-# TASK BOARD (ADD + DELETE)
-# =====================================================
-elif page == "📝 Task Board":
+    st.subheader("➕ Add Task")
 
     with st.form("add_task"):
         assignee = st.text_input("Assignee")
@@ -202,7 +188,7 @@ elif page == "📝 Task Board":
 
     if submit:
         new_task = {
-            "task_id": int(datetime.now().timestamp()),
+            "task_id": str(int(datetime.now().timestamp())),
             "owner": USER,
             "assignee": assignee,
             "department": department,
@@ -218,82 +204,55 @@ elif page == "📝 Task Board":
         st.success("Task added successfully")
         st.rerun()
 
-    st.markdown("### 🗑 Delete Task")
+    st.markdown("### 🗑 Delete Task (Safe)")
 
     if not df.empty:
-        delete_id = st.selectbox("Select Task ID to delete", df["task_id"].tolist())
-        if st.button("❌ Delete Task"):
+        delete_id = st.selectbox(
+            "Select Task ID",
+            df["task_id"].tolist()
+        )
+
+        task_preview = df[df["task_id"] == delete_id].iloc[0]
+        st.warning(f"Task: **{task_preview['task']}** | Assignee: **{task_preview['assignee']}**")
+
+        confirm = st.checkbox("I confirm I want to delete this task")
+
+        if st.button("❌ Permanently Delete") and confirm:
             df = df[df["task_id"] != delete_id]
             save_tasks(df)
-            st.warning("Task deleted")
+            st.success("Task deleted successfully")
             st.rerun()
 
     st.markdown("### 📋 Current Tasks")
     st.dataframe(df, use_container_width=True)
 
 # =====================================================
-# ASSIGNEE VIEW
+# OTHER PAGES (UNCHANGED)
 # =====================================================
 elif page == "👤 Assignee View":
-
     assignee = st.selectbox("Select Assignee", sorted(df["assignee"].dropna().unique()))
     st.dataframe(df[df["assignee"] == assignee], use_container_width=True)
 
-# =====================================================
-# CALENDAR
-# =====================================================
 elif page == "🗓 Calendar":
-
     selected = st.date_input("Select Date", date.today())
     st.dataframe(df[df["due_date"].dt.date == selected], use_container_width=True)
 
-# =====================================================
-# GANTT
-# =====================================================
 elif page == "🧱 Gantt":
-
-    fig = px.timeline(
-        df,
-        x_start="start_date",
-        x_end="due_date",
-        y="task",
-        color="assignee",
-        title="Renewable Operations – Task Timeline"
-    )
+    fig = px.timeline(df, x_start="start_date", x_end="due_date", y="task", color="assignee")
     fig.update_yaxes(autorange="reversed")
     st.plotly_chart(fig, use_container_width=True)
 
-# =====================================================
-# ANALYTICS
-# =====================================================
 elif page == "📊 Analytics":
-
     st.plotly_chart(px.pie(df, names="status"), use_container_width=True)
     st.plotly_chart(px.bar(df, x="department", color="department"), use_container_width=True)
 
-# =====================================================
-# SETTINGS
-# =====================================================
 elif page == "⚙️ Settings":
-
-    st.session_state.settings["show_completed"] = st.toggle(
-        "Show Completed Tasks", st.session_state.settings["show_completed"])
-
-    st.session_state.settings["enable_calendar"] = st.toggle(
-        "Enable Calendar View", st.session_state.settings["enable_calendar"])
-
-    st.session_state.settings["enable_gantt"] = st.toggle(
-        "Enable Gantt View", st.session_state.settings["enable_gantt"])
-
-    st.session_state.settings["default_status"] = st.selectbox(
-        "Default Task Status", ["To Do", "In Progress", "Completed"])
-
-    st.session_state.settings["default_priority"] = st.selectbox(
-        "Default Task Priority", ["Low", "Medium", "High"])
-
-    st.success("Settings applied immediately")
+    st.session_state.settings["show_completed"] = st.toggle("Show Completed Tasks", st.session_state.settings["show_completed"])
+    st.session_state.settings["enable_calendar"] = st.toggle("Enable Calendar View", st.session_state.settings["enable_calendar"])
+    st.session_state.settings["enable_gantt"] = st.toggle("Enable Gantt View", st.session_state.settings["enable_gantt"])
+    st.success("Settings applied")
 
 # =====================================================
 # FOOTER
 # =====================================================
-st.caption(" Serentica Renewables • Cloud-safe • Background fixed • Delete enabled")
+st.caption(" Serentica Renewables • Market & Operations • Task Manager")
