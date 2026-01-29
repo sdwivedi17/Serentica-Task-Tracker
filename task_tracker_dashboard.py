@@ -134,7 +134,7 @@ if st.session_state.role == "Admin":
         assignee = st.text_input("Assignee")
         department = st.selectbox(
             "Department",
-            ["Solar", "Wind", "Trading", "Operations", "Finance"]
+            ["Solar", "Wind", "Asset Management", "Market & Operations", "Finance"]
         )
         task = st.text_area("Task Description")
         start_date = st.date_input("Start Date", date.today())
@@ -241,3 +241,4 @@ if not gantt_df.empty:
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("No tasks with defined completion dates")
+
