@@ -2,11 +2,10 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta
 import plotly.express as px
-from io import BytesIO
 import os
 
 # =====================================================
-# CONFIG
+# PAGE CONFIG
 # =====================================================
 st.set_page_config(
     page_title="Serentica Renewables | PM Dashboard",
@@ -21,7 +20,7 @@ DATA_FILE = "tasks.csv"
 BG_IMAGE = "assets/IMG_4203.jpeg"
 
 # =====================================================
-# DATA SETUP
+# DATA SETUP (SAFE)
 # =====================================================
 COLUMNS = [
     "task_id", "owner", "assignee", "department",
@@ -34,16 +33,27 @@ if not os.path.exists(DATA_FILE):
 
 def load_tasks():
     df = pd.read_csv(DATA_FILE)
-    if not df.empty:
-        df["start_date"] = pd.to_datetime(df["start_date"])
-        df["due_date"] = pd.to_datetime(df["due_date"])
+
+    # Ensure all columns exist
+    for col in COLUMNS:
+        if col not in df.columns:
+            df[col] = None
+
+    # SAFE date parsing (THIS FIXES YOUR ERROR)
+    df["start_date"] = pd.to_datetime(df["start_date"], errors="coerce")
+    df["due_date"] = pd.to_datetime(df["due_date"], errors="coerce")
+
+    # Fill missing dates safely
+    df["start_date"] = df["start_date"].fillna(pd.Timestamp.today())
+    df["due_date"] = df["due_date"].fillna(df["start_date"] + pd.Timedelta(days=3))
+
     return df
 
 def save_tasks(df):
     df.to_csv(DATA_FILE, index=False)
 
 # =====================================================
-# SESSION STATE DEFAULTS
+# SESSION STATE
 # =====================================================
 if "user" not in st.session_state:
     st.session_state.user = None
@@ -58,7 +68,7 @@ if "settings" not in st.session_state:
     }
 
 # =====================================================
-# LOGIN SCREEN (CENTERED WITH BACKGROUND)
+# LOGIN SCREEN
 # =====================================================
 if st.session_state.user is None:
 
@@ -70,11 +80,11 @@ if st.session_state.user is None:
             background-size: cover;
             background-position: center;
         }}
-        .login-card {{
-            background: rgba(255,255,255,0.92);
+        .login-box {{
+            background: rgba(255,255,255,0.94);
             padding: 2.5rem;
-            border-radius: 16px;
-            width: 380px;
+            border-radius: 14px;
+            width: 360px;
             margin: auto;
             margin-top: 15vh;
             box-shadow: 0px 10px 30px rgba(0,0,0,0.25);
@@ -85,14 +95,12 @@ if st.session_state.user is None:
         unsafe_allow_html=True
     )
 
-    st.markdown('<div class="login-card">', unsafe_allow_html=True)
+    st.markdown('<div class="login-box">', unsafe_allow_html=True)
     st.markdown("## ⚡ Serentica Renewables")
     st.markdown("### Project Management Portal")
 
     username = st.text_input("👤 Enter your name")
-    login = st.button("🔐 Login")
-
-    if login and username.strip():
+    if st.button("🔐 Login") and username.strip():
         st.session_state.user = username.strip()
         st.rerun()
 
@@ -112,20 +120,20 @@ if not st.session_state.settings["show_completed"]:
     df = df[df["status"] != "Completed"]
 
 # =====================================================
-# SIDEBAR NAVIGATION
+# SIDEBAR
 # =====================================================
 st.sidebar.title("⚡ Serentica")
 st.sidebar.success(f"Logged in as {USER}")
 
-page_list = ["🏠 Overview", "📝 Task Board", "👤 Assignee View", "📊 Analytics", "⚙️ Settings"]
+pages = ["🏠 Overview", "📝 Task Board", "👤 Assignee View", "📊 Analytics", "⚙️ Settings"]
 
 if st.session_state.settings["enable_calendar"]:
-    page_list.insert(3, "🗓 Calendar")
+    pages.insert(3, "🗓 Calendar")
 
 if st.session_state.settings["enable_gantt"]:
-    page_list.insert(4, "🧱 Gantt")
+    pages.insert(4, "🧱 Gantt")
 
-page = st.sidebar.radio("Navigation", page_list)
+page = st.sidebar.radio("Navigation", pages)
 
 if st.sidebar.button("🚪 Logout"):
     st.session_state.user = None
@@ -137,7 +145,7 @@ if st.sidebar.button("🚪 Logout"):
 st.markdown(
     f"""
     <h2>Hello, {USER} 👋</h2>
-    <p style="color:grey;">Renewable energy project management dashboard</p>
+    <p style="color:grey;">Modern renewable project management</p>
     """,
     unsafe_allow_html=True
 )
@@ -149,7 +157,7 @@ st.markdown("---")
 if page == "🏠 Overview":
 
     if df.empty:
-        st.info("No tasks available.")
+        st.info("No tasks yet. Add your first task.")
         st.stop()
 
     overdue = ((df["due_date"].dt.date < date.today()) & (df["status"] != "Completed")).sum()
@@ -159,8 +167,6 @@ if page == "🏠 Overview":
     c2.metric("Completed", (df["status"] == "Completed").sum())
     c3.metric("In Progress", (df["status"] == "In Progress").sum())
     c4.metric("Overdue", overdue)
-
-    st.markdown("### 📌 Task Buckets")
 
     for status in ["To Do", "In Progress", "Completed"]:
         st.subheader(status)
@@ -212,13 +218,18 @@ elif page == "📝 Task Board":
 # ASSIGNEE VIEW
 # =====================================================
 elif page == "👤 Assignee View":
-    assignee = st.selectbox("Select Assignee", sorted(df["assignee"].unique()))
-    st.dataframe(df[df["assignee"] == assignee], use_container_width=True)
+
+    if df.empty:
+        st.info("No tasks available.")
+    else:
+        assignee = st.selectbox("Select Assignee", sorted(df["assignee"].dropna().unique()))
+        st.dataframe(df[df["assignee"] == assignee], use_container_width=True)
 
 # =====================================================
 # CALENDAR
 # =====================================================
 elif page == "🗓 Calendar":
+
     selected = st.date_input("Select Date", date.today())
     st.dataframe(df[df["due_date"].dt.date == selected], use_container_width=True)
 
@@ -226,6 +237,7 @@ elif page == "🗓 Calendar":
 # GANTT
 # =====================================================
 elif page == "🧱 Gantt":
+
     fig = px.timeline(
         df,
         x_start="start_date",
@@ -241,6 +253,7 @@ elif page == "🧱 Gantt":
 # ANALYTICS
 # =====================================================
 elif page == "📊 Analytics":
+
     st.plotly_chart(px.pie(df, names="status"), use_container_width=True)
     st.plotly_chart(px.bar(df, x="department", color="department"), use_container_width=True)
 
@@ -270,9 +283,9 @@ elif page == "⚙️ Settings":
         index=["Low", "Medium", "High"].index(
             st.session_state.settings["default_priority"]))
 
-    st.success("Settings apply immediately")
+    st.success("Settings applied instantly")
 
 # =====================================================
 # FOOTER
 # =====================================================
-st.caption("⚡ Serentica Renewables • Modern PM Dashboard • Secure Login • Live Views")
+st.caption("⚡ Serentica Renewables • Stable • Cloud-Safe • Modern PM Dashboard")
