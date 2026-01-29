@@ -99,17 +99,25 @@ if st.session_state.role == "User":
     df = df[df["assignee"] == st.session_state.user]
 
 # =====================================================
-# KPI METRICS
+# KPI METRICS (FIXED)
 # =====================================================
-k1, k2, k3, k4 = st.columns(4)
+today_ts = pd.Timestamp(date.today())
 
-k1.metric("Total Tasks", len(df))
-k2.metric("Completed", (df["status"] == "Completed").sum())
-k3.metric("TBD", df["due_date"].isna().sum())
-k4.metric(
-    "Overdue",
-    ((df["due_date"].dt.date < date.today()) & (df["status"] != "Completed")).sum()
-)
+total_tasks = len(df)
+completed_tasks = (df["status"] == "Completed").sum()
+tbd_tasks = df["due_date"].isna().sum()
+
+overdue_tasks = (
+    (df["due_date"].notna()) &
+    (df["due_date"] < today_ts) &
+    (df["status"] != "Completed")
+).sum()
+
+k1, k2, k3, k4 = st.columns(4)
+k1.metric("Total Tasks", total_tasks)
+k2.metric("Completed", completed_tasks)
+k3.metric("TBD", tbd_tasks)
+k4.metric("Overdue", overdue_tasks)
 
 # =====================================================
 # ADD TASK (ADMIN ONLY)
@@ -151,13 +159,12 @@ if st.session_state.role == "Admin":
             st.rerun()
 
 # =====================================================
-# EDIT / DELETE TASKS (FIXED SELECTBOX)
+# EDIT / DELETE TASKS
 # =====================================================
 st.subheader("📝 Task List")
 
 if not df.empty:
 
-    # Create stable label → id mapping
     df["label"] = df.apply(
         lambda x: f"{x['task']} | {x['assignee']} | {x['department']}",
         axis=1
@@ -201,13 +208,12 @@ if not df.empty:
             st.warning("Task deleted")
             st.rerun()
 
-    # Display table
-    display_df = df.drop(columns=["label"])
+    display_df = df.copy()
     display_df["Expected Completion"] = display_df["due_date"].apply(
         lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "TBD"
     )
 
-    st.dataframe(display_df, use_container_width=True)
+    st.dataframe(display_df.drop(columns=["label"]), use_container_width=True)
 
 else:
     st.info("No tasks available")
