@@ -19,8 +19,14 @@ IST = pytz.timezone("Asia/Kolkata")
 STATUS_OPTIONS = ["Pending", "In Progress", "Completed", "On Hold"]
 
 # =====================================================
-# DATA LOAD / SAVE
+# DATA SETUP
 # =====================================================
+if not os.path.exists(DATA_FILE):
+    pd.DataFrame(columns=[
+        "task_id", "assignee", "department", "task",
+        "start_date", "due_date", "status", "priority", "created_by"
+    ]).to_csv(DATA_FILE, index=False)
+
 def load_tasks():
     df = pd.read_csv(DATA_FILE)
     df["task_id"] = df["task_id"].astype(str)
@@ -47,7 +53,7 @@ def status_color(val):
         "Completed": "background-color:#d4edda",
         "In Progress": "background-color:#d1ecf1",
         "Pending": "background-color:#fff3cd",
-        "On Hold": "background-color:#f8d7da",
+        "On Hold": "background-color:#f8d7da"
     }.get(val, "")
 
 # =====================================================
@@ -104,12 +110,11 @@ st.markdown("---")
 # LOAD DATA
 # =====================================================
 df = load_tasks()
-
 if st.session_state.role == "User":
     df = df[df["assignee"] == st.session_state.user]
 
 # =====================================================
-# KPI
+# KPI METRICS
 # =====================================================
 today_ts = pd.Timestamp(date.today())
 
@@ -127,7 +132,46 @@ k4.metric(
 )
 
 # =====================================================
-# UPDATE TASK STATUS (FIXED)
+# ADD TASK (ADMIN)
+# =====================================================
+if st.session_state.role == "Admin":
+    with st.expander("➕ Add New Task"):
+        assignee = st.text_input("Assignee")
+        department = st.selectbox(
+            "Department",
+            ["Solar", "Wind", "Market & Operations", "Asset Management", "Finance"]
+        )
+        task = st.text_area("Task Description")
+        start_date = st.date_input("Start Date", date.today())
+
+        tbd = st.checkbox("Expected Completion Date = TBD")
+        due_date = None if tbd else st.date_input(
+            "Expected Completion Date",
+            date.today() + timedelta(days=5)
+        )
+
+        status = st.selectbox("Initial Status", STATUS_OPTIONS)
+        priority = st.selectbox("Priority", ["Low", "Medium", "High"])
+
+        if st.button("Add Task"):
+            new_task = {
+                "task_id": str(int(datetime.now().timestamp())),
+                "assignee": assignee,
+                "department": department,
+                "task": task,
+                "start_date": pd.to_datetime(start_date),
+                "due_date": pd.to_datetime(due_date) if due_date else pd.NaT,
+                "status": status,
+                "priority": priority,
+                "created_by": st.session_state.user
+            }
+            df = pd.concat([df, pd.DataFrame([new_task])], ignore_index=True)
+            save_tasks(df)
+            st.success("Task added successfully")
+            st.rerun()
+
+# =====================================================
+# UPDATE TASK STATUS
 # =====================================================
 st.subheader("🔄 Update Task Status")
 
@@ -142,8 +186,6 @@ if not df.empty:
     selected_id = label_to_id[selected_label]
 
     current_status = df.loc[df["task_id"] == selected_id, "status"].iloc[0]
-
-    # 🔑 FIX
     if current_status not in STATUS_OPTIONS:
         current_status = "Pending"
 
@@ -162,6 +204,30 @@ else:
     st.info("No tasks available")
 
 # =====================================================
+# DELETE TASK (ADMIN)
+# =====================================================
+if st.session_state.role == "Admin":
+    st.subheader("🗑 Delete Task")
+
+    if not df.empty:
+        df["del_label"] = df.apply(
+            lambda x: f"{x['task']} | {x['assignee']} | {x['department']}",
+            axis=1
+        )
+        label_to_id = dict(zip(df["del_label"], df["task_id"]))
+
+        del_label = st.selectbox("Select Task to Delete", list(label_to_id.keys()), key="del")
+        del_id = label_to_id[del_label]
+
+        if st.button("❌ Delete Selected Task"):
+            df = df[df["task_id"] != del_id]
+            save_tasks(df)
+            st.warning("Task deleted")
+            st.rerun()
+    else:
+        st.info("No tasks to delete")
+
+# =====================================================
 # TASK TABLE (COLORED)
 # =====================================================
 st.subheader("📋 Task List")
@@ -171,14 +237,34 @@ if not df.empty:
     display_df["Start Date"] = display_df["start_date"].dt.strftime("%d-%b-%Y")
     display_df["Expected Completion"] = display_df["due_date"].dt.strftime("%d-%b-%Y").fillna("TBD")
 
-    styled = (
+    styled_df = (
         display_df[
-            ["task", "assignee", "department", "Start Date", "Expected Completion", "status", "priority"]
+            ["task", "assignee", "department", "Start Date",
+             "Expected Completion", "status", "priority"]
         ]
         .style
         .applymap(status_color, subset=["status"])
     )
 
-    st.dataframe(styled, use_container_width=True)
+    st.dataframe(styled_df, use_container_width=True)
 else:
     st.info("No tasks available")
+
+# =====================================================
+# GANTT CHART
+# =====================================================
+st.subheader("🧱 Gantt Chart")
+
+gantt_df = df[df["due_date"].notna()]
+if not gantt_df.empty:
+    fig = px.timeline(
+        gantt_df,
+        x_start="start_date",
+        x_end="due_date",
+        y="task",
+        color="status"
+    )
+    fig.update_yaxes(autorange="reversed")
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("No tasks with defined completion dates")
