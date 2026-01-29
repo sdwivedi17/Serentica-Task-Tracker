@@ -17,19 +17,6 @@ DATA_FILE = "tasks.csv"
 IST = pytz.timezone("Asia/Kolkata")
 
 # =====================================================
-# DEPARTMENT LOGOS
-# =====================================================
-DEPARTMENT_LOGOS = {
-    "Solar": "☀️ Solar",
-    "Wind": "🌬️ Wind",
-    "Trading": "💹 Trading",
-    "Market & Operations": "⚙️ Market & Operations",
-    "Finance": "💰 Finance"
-}
-
-LOGO_TO_DEPT = {v: k for k, v in DEPARTMENT_LOGOS.items()}
-
-# =====================================================
 # DATA MODEL
 # =====================================================
 COLUMNS = [
@@ -41,22 +28,24 @@ if not os.path.exists(DATA_FILE):
     pd.DataFrame(columns=COLUMNS).to_csv(DATA_FILE, index=False)
 
 # =====================================================
-# DATE NORMALIZATION
+# DATE HANDLING (CRITICAL & SAFE)
 # =====================================================
-def normalize_dates(df):
-    for col in ["start_date", "due_date"]:
-        df[col] = pd.to_datetime(df[col], errors="coerce")
-    return df
-
 def load_tasks():
-    df = pd.read_csv(DATA_FILE, dtype=str)
-    df = normalize_dates(df)
+    df = pd.read_csv(DATA_FILE)
     df["task_id"] = df["task_id"].astype(str)
+    df["start_date"] = pd.to_datetime(df["start_date"], errors="coerce")
+    df["due_date"] = pd.to_datetime(df["due_date"], errors="coerce")
     return df
 
 def save_tasks(df):
-    df = normalize_dates(df)
-    df.to_csv(DATA_FILE, index=False)
+    df_to_save = df.copy()
+    df_to_save["start_date"] = df_to_save["start_date"].apply(
+        lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else ""
+    )
+    df_to_save["due_date"] = df_to_save["due_date"].apply(
+        lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else ""
+    )
+    df_to_save.to_csv(DATA_FILE, index=False)
 
 # =====================================================
 # SESSION STATE
@@ -83,7 +72,7 @@ if st.session_state.theme == "dark":
 # LOGIN
 # =====================================================
 if st.session_state.user is None:
-    st.title(" Serentica Renewables")
+    st.title("Serentica Renewables")
     st.subheader("Task Management Portal")
 
     username = st.text_input("Username")
@@ -102,10 +91,10 @@ if st.session_state.user is None:
 now_ist = datetime.now(IST).strftime("%d %b %Y | %H:%M:%S IST")
 
 h1, h2, h3 = st.columns([5, 2, 1])
-h1.markdown(f"## 👋 Hello, {st.session_state.user}")
+h1.markdown(f"## Hello, {st.session_state.user}")
 h2.markdown(f"🕒 **{now_ist}**")
 
-if h3.button("🌙 / ☀️"):
+if h3.button("Dark / Light"):
     st.session_state.theme = "dark" if st.session_state.theme == "light" else "light"
     st.rerun()
 
@@ -120,7 +109,7 @@ if st.session_state.role == "User":
     df = df[df["assignee"] == st.session_state.user]
 
 # =====================================================
-# KPI METRICS (FIXED)
+# KPI METRICS
 # =====================================================
 today_ts = pd.Timestamp(date.today())
 
@@ -145,13 +134,10 @@ k4.metric("Overdue", overdue_tasks)
 if st.session_state.role == "Admin":
     with st.expander("➕ Add New Task"):
         assignee = st.text_input("Assignee")
-
-        dept_logo = st.selectbox(
+        department = st.selectbox(
             "Department",
-            list(DEPARTMENT_LOGOS.values())
+            ["Solar", "Wind", "Trading", "Operations", "Finance"]
         )
-        department = LOGO_TO_DEPT[dept_logo]
-
         task = st.text_area("Task Description")
         start_date = st.date_input("Start Date", date.today())
 
@@ -170,8 +156,8 @@ if st.session_state.role == "Admin":
                 "assignee": assignee,
                 "department": department,
                 "task": task,
-                "start_date": start_date,
-                "due_date": due_date,
+                "start_date": pd.to_datetime(start_date),
+                "due_date": pd.to_datetime(due_date) if due_date else pd.NaT,
                 "status": status,
                 "priority": priority,
                 "created_by": st.session_state.user
@@ -182,19 +168,24 @@ if st.session_state.role == "Admin":
             st.rerun()
 
 # =====================================================
-# TASK TABLE
+# TASK TABLE (DATES ALWAYS SHOWN)
 # =====================================================
-st.subheader("📝 Task List")
+st.subheader("Task List")
 
 if not df.empty:
-    df_display = df.copy()
-    df_display["Department"] = df_display["department"].map(DEPARTMENT_LOGOS)
-    df_display["Expected Completion"] = df_display["due_date"].apply(
-        lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "TBD"
-    )
+    display_df = df.copy()
+    display_df["Start Date"] = display_df["start_date"].dt.strftime("%d-%b-%Y")
+    display_df["Expected Completion"] = display_df["due_date"].dt.strftime("%d-%b-%Y")
+    display_df["Expected Completion"] = display_df["Expected Completion"].fillna("TBD")
 
     st.dataframe(
-        df_display.drop(columns=["department"]),
+        display_df[
+            [
+                "task", "assignee", "department",
+                "Start Date", "Expected Completion",
+                "status", "priority"
+            ]
+        ],
         use_container_width=True
     )
 else:
@@ -203,7 +194,7 @@ else:
 # =====================================================
 # GANTT VIEW
 # =====================================================
-st.subheader("🧱 Gantt Chart")
+st.subheader("Gantt Chart")
 
 gantt_df = df[df["due_date"].notna()]
 
@@ -213,7 +204,7 @@ if not gantt_df.empty:
         x_start="start_date",
         x_end="due_date",
         y="task",
-        color=gantt_df["department"].map(DEPARTMENT_LOGOS)
+        color="department"
     )
     fig.update_yaxes(autorange="reversed")
     st.plotly_chart(fig, use_container_width=True)
