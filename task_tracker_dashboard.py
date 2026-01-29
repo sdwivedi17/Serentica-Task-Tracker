@@ -46,12 +46,11 @@ if not os.path.exists(DATA_FILE):
 def load_tasks():
     df = pd.read_csv(DATA_FILE)
 
-    # Ensure columns
     for col in COLUMNS:
         if col not in df.columns:
             df[col] = None
 
-    #  CRITICAL FIX: normalize task_id
+    # Normalize task_id (critical for delete)
     df["task_id"] = df["task_id"].astype(str)
 
     # Safe date parsing
@@ -59,7 +58,6 @@ def load_tasks():
     df["due_date"] = pd.to_datetime(df["due_date"], errors="coerce")
 
     df["start_date"] = df["start_date"].fillna(pd.Timestamp.today())
-    df["due_date"] = df["due_date"].fillna(df["start_date"] + pd.Timedelta(days=3))
 
     return df
 
@@ -76,9 +74,7 @@ if "settings" not in st.session_state:
     st.session_state.settings = {
         "show_completed": True,
         "enable_calendar": True,
-        "enable_gantt": True,
-        "default_status": "To Do",
-        "default_priority": "Medium"
+        "enable_gantt": True
     }
 
 # =====================================================
@@ -111,8 +107,8 @@ if st.session_state.user is None:
         )
 
     st.markdown('<div class="login-box">', unsafe_allow_html=True)
-    st.markdown(" Serentica Renewables")
-    st.markdown(" Task Manager Portal")
+    st.markdown("## Serentica Renewables")
+    st.markdown("### Task Manager Portal")
 
     username = st.text_input("👤 Enter your name")
     if st.button("🔐 Login") and username.strip():
@@ -137,7 +133,7 @@ if not st.session_state.settings["show_completed"]:
 # =====================================================
 # SIDEBAR
 # =====================================================
-st.sidebar.title(" Serentica")
+st.sidebar.title("Serentica")
 st.sidebar.success(f"Logged in as {USER}")
 
 pages = ["🏠 Overview", "📝 Task Board", "👤 Assignee View", "📊 Analytics", "⚙️ Settings"]
@@ -167,7 +163,7 @@ st.markdown(
 st.markdown("---")
 
 # =====================================================
-# TASK BOARD (ADD + DELETE FIXED)
+# TASK BOARD (ADD + DELETE + TBD)
 # =====================================================
 if page == "📝 Task Board":
 
@@ -177,11 +173,24 @@ if page == "📝 Task Board":
         assignee = st.text_input("Assignee")
         department = st.selectbox(
             "Department",
-            ["Solar", "Wind", "Project Planning", "Finance", "Market & Operations", "Asset Management","Business Development"]
+            [
+                "Solar", "Wind", "Project Planning", "Finance",
+                "Market & Operations", "Asset Management", "Business Development"
+            ]
         )
         task = st.text_area("Task Description")
         start_date = st.date_input("Start Date", date.today())
-        due_date = st.date_input("Expected Completion Date", date.today() + timedelta(days=5))
+
+        tbd = st.checkbox("Expected Completion Date = TBD")
+
+        if not tbd:
+            due_date = st.date_input(
+                "Expected Completion Date",
+                date.today() + timedelta(days=5)
+            )
+        else:
+            due_date = None
+
         status = st.selectbox("Status", ["To Do", "In Progress", "Completed"])
         priority = st.selectbox("Priority", ["Low", "Medium", "High"])
         submit = st.form_submit_button("➕ Add Task")
@@ -194,7 +203,7 @@ if page == "📝 Task Board":
             "department": department,
             "task": task,
             "start_date": start_date,
-            "due_date": due_date,
+            "due_date": due_date,   # None = TBD
             "status": status,
             "priority": priority,
             "created_at": datetime.now().isoformat()
@@ -202,59 +211,85 @@ if page == "📝 Task Board":
         df = pd.concat([df, pd.DataFrame([new_task])], ignore_index=True)
         save_tasks(df)
         st.success("Task added successfully")
-        st.rerun()
+        st.rerun()   # 🔄 FORCE REFRESH AFTER ASSIGNMENT
 
     st.markdown("### 🗑 Delete Task (Safe)")
 
     if not df.empty:
-        delete_id = st.selectbox(
-            "Select Task ID",
-            df["task_id"].tolist()
-        )
-
-        task_preview = df[df["task_id"] == delete_id].iloc[0]
-        st.warning(f"Task: **{task_preview['task']}** | Assignee: **{task_preview['assignee']}**")
+        delete_id = st.selectbox("Select Task ID", df["task_id"].tolist())
+        preview = df[df["task_id"] == delete_id].iloc[0]
+        st.warning(f"Task: **{preview['task']}** | Assignee: **{preview['assignee']}**")
 
         confirm = st.checkbox("I confirm I want to delete this task")
-
         if st.button("❌ Permanently Delete") and confirm:
             df = df[df["task_id"] != delete_id]
             save_tasks(df)
             st.success("Task deleted successfully")
             st.rerun()
 
+    display_df = df.copy()
+    display_df["Expected Completion"] = display_df["due_date"].dt.date.astype(str)
+    display_df.loc[display_df["due_date"].isna(), "Expected Completion"] = "TBD"
+
     st.markdown("### 📋 Current Tasks")
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(display_df, use_container_width=True)
 
 # =====================================================
-# OTHER PAGES (UNCHANGED)
+# ASSIGNEE VIEW
 # =====================================================
 elif page == "👤 Assignee View":
     assignee = st.selectbox("Select Assignee", sorted(df["assignee"].dropna().unique()))
     st.dataframe(df[df["assignee"] == assignee], use_container_width=True)
 
+# =====================================================
+# CALENDAR (EXCLUDES TBD)
+# =====================================================
 elif page == "🗓 Calendar":
+    dated = df[df["due_date"].notna()]
     selected = st.date_input("Select Date", date.today())
-    st.dataframe(df[df["due_date"].dt.date == selected], use_container_width=True)
+    st.dataframe(dated[dated["due_date"].dt.date == selected], use_container_width=True)
 
+# =====================================================
+# GANTT (EXCLUDES TBD)
+# =====================================================
 elif page == "🧱 Gantt":
-    fig = px.timeline(df, x_start="start_date", x_end="due_date", y="task", color="assignee")
+    gantt_df = df[df["due_date"].notna()]
+    fig = px.timeline(
+        gantt_df,
+        x_start="start_date",
+        x_end="due_date",
+        y="task",
+        color="assignee"
+    )
     fig.update_yaxes(autorange="reversed")
     st.plotly_chart(fig, use_container_width=True)
 
+# =====================================================
+# ANALYTICS
+# =====================================================
 elif page == "📊 Analytics":
     st.plotly_chart(px.pie(df, names="status"), use_container_width=True)
     st.plotly_chart(px.bar(df, x="department", color="department"), use_container_width=True)
 
+# =====================================================
+# SETTINGS
+# =====================================================
 elif page == "⚙️ Settings":
-    st.session_state.settings["show_completed"] = st.toggle("Show Completed Tasks", st.session_state.settings["show_completed"])
-    st.session_state.settings["enable_calendar"] = st.toggle("Enable Calendar View", st.session_state.settings["enable_calendar"])
-    st.session_state.settings["enable_gantt"] = st.toggle("Enable Gantt View", st.session_state.settings["enable_gantt"])
+    st.session_state.settings["show_completed"] = st.toggle(
+        "Show Completed Tasks",
+        st.session_state.settings["show_completed"]
+    )
+    st.session_state.settings["enable_calendar"] = st.toggle(
+        "Enable Calendar View",
+        st.session_state.settings["enable_calendar"]
+    )
+    st.session_state.settings["enable_gantt"] = st.toggle(
+        "Enable Gantt View",
+        st.session_state.settings["enable_gantt"]
+    )
     st.success("Settings applied")
 
 # =====================================================
 # FOOTER
 # =====================================================
-st.caption(" Serentica Renewables • Market & Operations • Task Manager")
-
-
+st.caption("Serentica Renewables • Task Manager • Market & Operations")
