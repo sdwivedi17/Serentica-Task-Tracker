@@ -233,8 +233,8 @@ display_df["Expected Completion"] = display_df["due_date"].apply(
     lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "TBD"
 )
 
-    st.markdown("### 📋 Current Tasks")
-    st.dataframe(display_df, use_container_width=True)
+st.markdown("### 📋 Current Tasks")
+st.dataframe(display_df, use_container_width=True)
 
 # =====================================================
 # ASSIGNEE VIEW
@@ -295,4 +295,5 @@ elif page == "⚙️ Settings":
 # FOOTER
 # =====================================================
 st.caption("Serentica Renewables • Task Manager • Market & Operations")
+
 
