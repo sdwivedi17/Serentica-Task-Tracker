@@ -4,23 +4,27 @@ from datetime import datetime, date, timedelta
 import plotly.express as px
 from io import BytesIO
 import os
-from streamlit_autorefresh import st_autorefresh
 
 # =====================================================
 # CONFIG
 # =====================================================
 st.set_page_config(
-    page_title="Serentica Renewables | Task Dashboard",
-    layout="wide"
+    page_title="Serentica Renewables | PM Dashboard",
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
-st_autorefresh(interval=30000, key="refresh")
 
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(BASE_DIR)
 
 DATA_FILE = "tasks.csv"
+BG_IMAGE = "assets/IMG_4203.jpeg"
 
+# =====================================================
+# DATA SETUP
+# =====================================================
 COLUMNS = [
-    "id", "owner", "assignee", "department",
+    "task_id", "owner", "assignee", "department",
     "task", "start_date", "due_date",
     "status", "priority", "created_at"
 ]
@@ -28,9 +32,6 @@ COLUMNS = [
 if not os.path.exists(DATA_FILE):
     pd.DataFrame(columns=COLUMNS).to_csv(DATA_FILE, index=False)
 
-# =====================================================
-# DATA FUNCTIONS
-# =====================================================
 def load_tasks():
     df = pd.read_csv(DATA_FILE)
     if not df.empty:
@@ -42,51 +43,93 @@ def save_tasks(df):
     df.to_csv(DATA_FILE, index=False)
 
 # =====================================================
-# LOGIN
+# SESSION STATE DEFAULTS
 # =====================================================
 if "user" not in st.session_state:
     st.session_state.user = None
 
-st.sidebar.title("🔐 Login")
+if "settings" not in st.session_state:
+    st.session_state.settings = {
+        "show_completed": True,
+        "enable_calendar": True,
+        "enable_gantt": True,
+        "default_status": "To Do",
+        "default_priority": "Medium"
+    }
 
-if not st.session_state.user:
-    user = st.sidebar.text_input("Your Name")
-    if st.sidebar.button("Login") and user:
-        st.session_state.user = user
-        st.rerun()
-else:
-    st.sidebar.success(f"Logged in as {st.session_state.user}")
-    if st.sidebar.button("Logout"):
-        st.session_state.user = None
+# =====================================================
+# LOGIN SCREEN (CENTERED WITH BACKGROUND)
+# =====================================================
+if st.session_state.user is None:
+
+    st.markdown(
+        f"""
+        <style>
+        .stApp {{
+            background-image: url("{BG_IMAGE}");
+            background-size: cover;
+            background-position: center;
+        }}
+        .login-card {{
+            background: rgba(255,255,255,0.92);
+            padding: 2.5rem;
+            border-radius: 16px;
+            width: 380px;
+            margin: auto;
+            margin-top: 15vh;
+            box-shadow: 0px 10px 30px rgba(0,0,0,0.25);
+            text-align: center;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.markdown('<div class="login-card">', unsafe_allow_html=True)
+    st.markdown("## ⚡ Serentica Renewables")
+    st.markdown("### Project Management Portal")
+
+    username = st.text_input("👤 Enter your name")
+    login = st.button("🔐 Login")
+
+    if login and username.strip():
+        st.session_state.user = username.strip()
         st.rerun()
 
-if not st.session_state.user:
+    st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
+# =====================================================
+# USER LOGGED IN
+# =====================================================
 USER = st.session_state.user
-
-# =====================================================
-# NAVIGATION
-# =====================================================
-st.sidebar.markdown("---")
-page = st.sidebar.radio(
-    "Navigation",
-    [
-        "🏠 Home",
-        "📝 My Tasks",
-        "📊 Analytics",
-        "🗓 Calendar View",
-        "🧱 Gantt View"
-    ]
-)
-
-# =====================================================
-# LOAD DATA
-# =====================================================
 df = load_tasks()
 
-if USER.lower() != "admin" and not df.empty:
+if USER.lower() != "admin":
     df = df[df["owner"] == USER]
+
+if not st.session_state.settings["show_completed"]:
+    df = df[df["status"] != "Completed"]
+
+# =====================================================
+# SIDEBAR NAVIGATION
+# =====================================================
+st.sidebar.title("⚡ Serentica")
+st.sidebar.success(f"Logged in as {USER}")
+
+page_list = ["🏠 Overview", "📝 Task Board", "👤 Assignee View", "📊 Analytics", "⚙️ Settings"]
+
+if st.session_state.settings["enable_calendar"]:
+    page_list.insert(3, "🗓 Calendar")
+
+if st.session_state.settings["enable_gantt"]:
+    page_list.insert(4, "🧱 Gantt")
+
+page = st.sidebar.radio("Navigation", page_list)
+
+if st.sidebar.button("🚪 Logout"):
+    st.session_state.user = None
+    st.rerun()
 
 # =====================================================
 # HEADER
@@ -94,26 +137,22 @@ if USER.lower() != "admin" and not df.empty:
 st.markdown(
     f"""
     <h2>Hello, {USER} 👋</h2>
-    <p style="color:grey;">Renewable operations task dashboard</p>
+    <p style="color:grey;">Renewable energy project management dashboard</p>
     """,
     unsafe_allow_html=True
 )
-
 st.markdown("---")
 
 # =====================================================
-# HOME
+# OVERVIEW
 # =====================================================
-if page == "🏠 Home":
+if page == "🏠 Overview":
 
     if df.empty:
         st.info("No tasks available.")
         st.stop()
 
-    overdue = (
-        (df["due_date"].dt.date < date.today()) &
-        (df["status"] != "Completed")
-    ).sum()
+    overdue = ((df["due_date"].dt.date < date.today()) & (df["status"] != "Completed")).sum()
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Tasks", len(df))
@@ -121,49 +160,37 @@ if page == "🏠 Home":
     c3.metric("In Progress", (df["status"] == "In Progress").sum())
     c4.metric("Overdue", overdue)
 
-    st.markdown("### 📋 Task Buckets")
+    st.markdown("### 📌 Task Buckets")
 
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.subheader("🟡 To Do")
-        st.dataframe(df[df["status"] == "To Do"], use_container_width=True)
-
-    with col2:
-        st.subheader("🔵 In Progress")
-        st.dataframe(df[df["status"] == "In Progress"], use_container_width=True)
-
-    with col3:
-        st.subheader("🟢 Completed")
-        st.dataframe(df[df["status"] == "Completed"], use_container_width=True)
+    for status in ["To Do", "In Progress", "Completed"]:
+        st.subheader(status)
+        st.dataframe(df[df["status"] == status], use_container_width=True)
 
 # =====================================================
-# TASK CREATION
+# TASK BOARD
 # =====================================================
-elif page == "📝 My Tasks":
-
-    st.subheader("➕ Create New Task")
+elif page == "📝 Task Board":
 
     with st.form("add_task"):
         assignee = st.text_input("Assignee")
         department = st.selectbox(
             "Department",
-            [
-                "Solar", "Wind", "Trading",
-                "Operations", "Finance",
-                "Grid & Scheduling", "Asset Management"
-            ]
+            ["Solar", "Wind", "Trading", "Operations", "Finance", "Grid & Scheduling", "Asset Management"]
         )
         task = st.text_area("Task Description")
         start_date = st.date_input("Start Date", date.today())
-        due_date = st.date_input("Due Date", date.today() + timedelta(days=3))
-        status = st.selectbox("Status", ["To Do", "In Progress", "Completed"])
-        priority = st.selectbox("Priority", ["Low", "Medium", "High"])
-        submit = st.form_submit_button("Add Task")
+        due_date = st.date_input("Expected Completion Date", date.today() + timedelta(days=5))
+        status = st.selectbox("Status", ["To Do", "In Progress", "Completed"],
+                              index=["To Do", "In Progress", "Completed"].index(
+                                  st.session_state.settings["default_status"]))
+        priority = st.selectbox("Priority", ["Low", "Medium", "High"],
+                                index=["Low", "Medium", "High"].index(
+                                    st.session_state.settings["default_priority"]))
+        submit = st.form_submit_button("➕ Add Task")
 
     if submit:
         new_task = {
-            "id": int(datetime.now().timestamp()),
+            "task_id": int(datetime.now().timestamp()),
             "owner": USER,
             "assignee": assignee,
             "department": department,
@@ -179,88 +206,73 @@ elif page == "📝 My Tasks":
         st.success("Task added successfully")
         st.rerun()
 
-    st.markdown("### 📋 Your Tasks")
     st.dataframe(df, use_container_width=True)
+
+# =====================================================
+# ASSIGNEE VIEW
+# =====================================================
+elif page == "👤 Assignee View":
+    assignee = st.selectbox("Select Assignee", sorted(df["assignee"].unique()))
+    st.dataframe(df[df["assignee"] == assignee], use_container_width=True)
+
+# =====================================================
+# CALENDAR
+# =====================================================
+elif page == "🗓 Calendar":
+    selected = st.date_input("Select Date", date.today())
+    st.dataframe(df[df["due_date"].dt.date == selected], use_container_width=True)
+
+# =====================================================
+# GANTT
+# =====================================================
+elif page == "🧱 Gantt":
+    fig = px.timeline(
+        df,
+        x_start="start_date",
+        x_end="due_date",
+        y="task",
+        color="assignee",
+        title="Renewable Operations – Task Timeline"
+    )
+    fig.update_yaxes(autorange="reversed")
+    st.plotly_chart(fig, use_container_width=True)
 
 # =====================================================
 # ANALYTICS
 # =====================================================
 elif page == "📊 Analytics":
-
-    if df.empty:
-        st.info("No data available.")
-        st.stop()
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.plotly_chart(
-            px.pie(df, names="status", title="Task Status Distribution"),
-            use_container_width=True
-        )
-
-    with col2:
-        st.plotly_chart(
-            px.bar(
-                df,
-                x="department",
-                title="Department-wise Workload",
-                color="department"
-            ),
-            use_container_width=True
-        )
+    st.plotly_chart(px.pie(df, names="status"), use_container_width=True)
+    st.plotly_chart(px.bar(df, x="department", color="department"), use_container_width=True)
 
 # =====================================================
-# CALENDAR VIEW
+# SETTINGS
 # =====================================================
-elif page == "🗓 Calendar View":
+elif page == "⚙️ Settings":
 
-    st.subheader("🗓 Task Calendar")
+    st.subheader("⚙️ Dashboard Settings")
 
-    if df.empty:
-        st.info("No tasks available.")
-        st.stop()
+    st.session_state.settings["show_completed"] = st.toggle(
+        "Show Completed Tasks", st.session_state.settings["show_completed"])
 
-    df["due_day"] = df["due_date"].dt.date
+    st.session_state.settings["enable_calendar"] = st.toggle(
+        "Enable Calendar View", st.session_state.settings["enable_calendar"])
 
-    selected_day = st.date_input("Select Date", date.today())
+    st.session_state.settings["enable_gantt"] = st.toggle(
+        "Enable Gantt View", st.session_state.settings["enable_gantt"])
 
-    day_tasks = df[df["due_day"] == selected_day]
+    st.session_state.settings["default_status"] = st.selectbox(
+        "Default Task Status", ["To Do", "In Progress", "Completed"],
+        index=["To Do", "In Progress", "Completed"].index(
+            st.session_state.settings["default_status"]))
 
-    if day_tasks.empty:
-        st.info("No tasks scheduled for this day.")
-    else:
-        st.dataframe(day_tasks, use_container_width=True)
+    st.session_state.settings["default_priority"] = st.selectbox(
+        "Default Task Priority", ["Low", "Medium", "High"],
+        index=["Low", "Medium", "High"].index(
+            st.session_state.settings["default_priority"]))
 
-# =====================================================
-# GANTT VIEW
-# =====================================================
-elif page == "🧱 Gantt View":
-
-    st.subheader("🧱 Task Timeline (Gantt View)")
-
-    if df.empty:
-        st.info("No tasks available.")
-        st.stop()
-
-    gantt_df = df.copy()
-    gantt_df["Task"] = gantt_df["task"]
-    gantt_df["Start"] = gantt_df["start_date"]
-    gantt_df["Finish"] = gantt_df["due_date"]
-
-    fig = px.timeline(
-        gantt_df,
-        x_start="Start",
-        x_end="Finish",
-        y="Task",
-        color="department",
-        title="Project Timeline – Renewable Operations"
-    )
-
-    fig.update_yaxes(autorange="reversed")
-    st.plotly_chart(fig, use_container_width=True)
+    st.success("Settings apply immediately")
 
 # =====================================================
 # FOOTER
 # =====================================================
-st.caption(" Serentica Renewables • Live • Multi-user • Gantt • Calendar")
+st.caption("⚡ Serentica Renewables • Modern PM Dashboard • Secure Login • Live Views")
