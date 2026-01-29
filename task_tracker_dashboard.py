@@ -177,7 +177,7 @@ if page == "📝 Task Board":
         assignee = st.text_input("Assignee")
         department = st.selectbox(
             "Department",
-            ["Solar", "Wind", "Trading", "Operations", "Finance", "Grid & Scheduling", "Asset Management"]
+            ["Solar", "Wind", "Project Planning", "Finance", "Market & Operations", "Asset Management","Business Development"]
         )
         task = st.text_area("Task Description")
         start_date = st.date_input("Start Date", date.today())
@@ -256,4 +256,5 @@ elif page == "⚙️ Settings":
 # FOOTER
 # =====================================================
 st.caption(" Serentica Renewables • Market & Operations • Task Manager")
+
 
