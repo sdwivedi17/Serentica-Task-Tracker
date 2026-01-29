@@ -17,7 +17,7 @@ DATA_FILE = "tasks.csv"
 IST = pytz.timezone("Asia/Kolkata")
 
 # =====================================================
-# DEPARTMENT LOGOS (UI ENHANCEMENT)
+# DEPARTMENT LOGOS
 # =====================================================
 DEPARTMENT_LOGOS = {
     "Solar": "☀️ Solar",
@@ -40,6 +40,9 @@ COLUMNS = [
 if not os.path.exists(DATA_FILE):
     pd.DataFrame(columns=COLUMNS).to_csv(DATA_FILE, index=False)
 
+# =====================================================
+# DATE NORMALIZATION
+# =====================================================
 def normalize_dates(df):
     for col in ["start_date", "due_date"]:
         df[col] = pd.to_datetime(df[col], errors="coerce")
@@ -80,7 +83,7 @@ if st.session_state.theme == "dark":
 # LOGIN
 # =====================================================
 if st.session_state.user is None:
-    st.title("⚡ Serentica Renewables")
+    st.title(" Serentica Renewables")
     st.subheader("Task Management Portal")
 
     username = st.text_input("Username")
@@ -117,22 +120,24 @@ if st.session_state.role == "User":
     df = df[df["assignee"] == st.session_state.user]
 
 # =====================================================
-# KPI METRICS
+# KPI METRICS (FIXED)
 # =====================================================
 today_ts = pd.Timestamp(date.today())
 
+total_tasks = len(df)
+completed_tasks = (df["status"] == "Completed").sum()
+tbd_tasks = df["due_date"].isna().sum()
+overdue_tasks = (
+    df["due_date"].notna() &
+    (df["due_date"] < today_ts) &
+    (df["status"] != "Completed")
+).sum()
+
 k1, k2, k3, k4 = st.columns(4)
-k1.metric("Total Tasks", len(df))
-k2.metric("Completed", (df["status"] == "Completed").sum())
-k3.metric("TBD", df["due_date"].isna().sum())
-k4.metric(
-    (
-        df["due_date"].notna() &
-        (df["due_date"] < today_ts) &
-        (df["status"] != "Completed")
-    ).sum(),
-    label="Overdue"
-)
+k1.metric("Total Tasks", total_tasks)
+k2.metric("Completed", completed_tasks)
+k3.metric("TBD", tbd_tasks)
+k4.metric("Overdue", overdue_tasks)
 
 # =====================================================
 # ADD TASK (ADMIN ONLY)
@@ -177,21 +182,21 @@ if st.session_state.role == "Admin":
             st.rerun()
 
 # =====================================================
-# TASK LIST
+# TASK TABLE
 # =====================================================
 st.subheader("📝 Task List")
 
 if not df.empty:
-    df["Department"] = df["department"].map(DEPARTMENT_LOGOS)
-    df["Expected Completion"] = df["due_date"].apply(
+    df_display = df.copy()
+    df_display["Department"] = df_display["department"].map(DEPARTMENT_LOGOS)
+    df_display["Expected Completion"] = df_display["due_date"].apply(
         lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "TBD"
     )
 
     st.dataframe(
-        df.drop(columns=["department"]),
+        df_display.drop(columns=["department"]),
         use_container_width=True
     )
-
 else:
     st.info("No tasks available")
 
@@ -208,7 +213,7 @@ if not gantt_df.empty:
         x_start="start_date",
         x_end="due_date",
         y="task",
-        color="Department"
+        color=gantt_df["department"].map(DEPARTMENT_LOGOS)
     )
     fig.update_yaxes(autorange="reversed")
     st.plotly_chart(fig, use_container_width=True)
