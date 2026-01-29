@@ -228,8 +228,10 @@ if page == "📝 Task Board":
             st.rerun()
 
     display_df = df.copy()
-    display_df["Expected Completion"] = display_df["due_date"].dt.date.astype(str)
-    display_df.loc[display_df["due_date"].isna(), "Expected Completion"] = "TBD"
+
+display_df["Expected Completion"] = display_df["due_date"].apply(
+    lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "TBD"
+)
 
     st.markdown("### 📋 Current Tasks")
     st.dataframe(display_df, use_container_width=True)
@@ -293,3 +295,4 @@ elif page == "⚙️ Settings":
 # FOOTER
 # =====================================================
 st.caption("Serentica Renewables • Task Manager • Market & Operations")
+
