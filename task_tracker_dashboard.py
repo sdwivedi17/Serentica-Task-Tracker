@@ -2,44 +2,26 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta
 import plotly.express as px
+import pytz
 import os
-import base64
-import random
-import requests
 
 # =====================================================
-# PAGE CONFIG
+# CONFIG
 # =====================================================
 st.set_page_config(
-    page_title="Serentica Renewables | Advanced Task Manager",
-    layout="wide",
-    initial_sidebar_state="collapsed"
+    page_title="Serentica Renewables | Task Tracker",
+    layout="wide"
 )
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-os.chdir(BASE_DIR)
-
 DATA_FILE = "tasks.csv"
-BG_IMAGE_PATH = "assets/renewable_bg.jpg"
+IST = pytz.timezone("Asia/Kolkata")
 
 # =====================================================
-# BACKGROUND IMAGE (BASE64)
-# =====================================================
-def get_base64_bg(path):
-    if not os.path.exists(path):
-        return ""
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
-
-BG_BASE64 = get_base64_bg(BG_IMAGE_PATH)
-
-# =====================================================
-# DATA MODEL
+# DATA SETUP
 # =====================================================
 COLUMNS = [
-    "task_id", "owner", "assignee", "department",
-    "task", "start_date", "due_date",
-    "status", "priority", "created_at"
+    "task_id", "assignee", "department", "task",
+    "start_date", "due_date", "status", "priority", "created_by"
 ]
 
 if not os.path.exists(DATA_FILE):
@@ -47,36 +29,13 @@ if not os.path.exists(DATA_FILE):
 
 def load_tasks():
     df = pd.read_csv(DATA_FILE)
-
-    for col in COLUMNS:
-        if col not in df.columns:
-            df[col] = None
-
     df["task_id"] = df["task_id"].astype(str)
-
     df["start_date"] = pd.to_datetime(df["start_date"], errors="coerce")
     df["due_date"] = pd.to_datetime(df["due_date"], errors="coerce")
-
-    df["start_date"] = df["start_date"].fillna(pd.Timestamp.today())
-
     return df
 
 def save_tasks(df):
     df.to_csv(DATA_FILE, index=False)
-
-# =====================================================
-# LIVE RTM PRICE (SAFE)
-# =====================================================
-def get_live_rtm_price():
-    try:
-        # Placeholder public-style endpoint (may fail gracefully)
-        resp = requests.get("https://api.allorigins.win/raw?url=https://www.iexindia.com/marketdata/areaprice.aspx", timeout=3)
-        if resp.status_code == 200:
-            return round(random.uniform(2500, 4500), 2)
-    except:
-        pass
-    # fallback
-    return round(random.uniform(2800, 4200), 2)
 
 # =====================================================
 # SESSION STATE
@@ -84,98 +43,87 @@ def get_live_rtm_price():
 if "user" not in st.session_state:
     st.session_state.user = None
 
+if "role" not in st.session_state:
+    st.session_state.role = None
+
+if "theme" not in st.session_state:
+    st.session_state.theme = "light"
+
 # =====================================================
-# LOGIN SCREEN
+# THEME
+# =====================================================
+if st.session_state.theme == "dark":
+    st.markdown(
+        """
+        <style>
+        .stApp { background-color:#0E1117; color:white; }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+# =====================================================
+# LOGIN
 # =====================================================
 if st.session_state.user is None:
+    st.title("⚡ Serentica Renewables")
+    st.subheader("Task Management Portal")
 
-    if BG_BASE64:
-        st.markdown(
-            f"""
-            <style>
-            .stApp {{
-                background-image: url("data:image/jpg;base64,{BG_BASE64}");
-                background-size: cover;
-                background-position: center;
-            }}
-            .login-box {{
-                background: rgba(255,255,255,0.94);
-                padding: 2.5rem;
-                border-radius: 16px;
-                width: 380px;
-                margin: auto;
-                margin-top: 15vh;
-                box-shadow: 0px 10px 30px rgba(0,0,0,0.25);
-                text-align: center;
-            }}
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
+    username = st.text_input("Username")
+    role = st.selectbox("Role", ["User", "Admin"])
 
-    st.markdown('<div class="login-box">', unsafe_allow_html=True)
-    st.markdown("## ⚡ Serentica Renewables")
-    st.markdown("### Advanced Task Manager")
-
-    username = st.text_input("👤 Enter your name")
-    if st.button("🔐 Login") and username.strip():
+    if st.button("Login") and username.strip():
         st.session_state.user = username.strip()
+        st.session_state.role = role
         st.rerun()
 
-    st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
-
-# =====================================================
-# USER LOGGED IN
-# =====================================================
-USER = st.session_state.user
-df = load_tasks()
-
-if USER.lower() != "admin":
-    df = df[df["owner"] == USER]
 
 # =====================================================
 # HEADER
 # =====================================================
-st.markdown(
-    f"""
-    <h2>Hello, {USER} 👋</h2>
-    <p style="color:grey;">Renewable Operations • PM Dashboard</p>
-    """,
-    unsafe_allow_html=True
-)
+now_ist = datetime.now(IST).strftime("%d %b %Y | %H:%M:%S IST")
 
-# =====================================================
-# KPI CARDS
-# =====================================================
-col1, col2, col3, col4 = st.columns(4)
+h1, h2, h3 = st.columns([5, 2, 1])
+h1.markdown(f"## 👋 Hello, {st.session_state.user}")
+h2.markdown(f"🕒 **{now_ist}**")
 
-col1.metric("Total Tasks", len(df))
-col2.metric("Completed", (df["status"] == "Completed").sum())
-col3.metric("TBD Tasks", df["due_date"].isna().sum())
-col4.metric("Overdue", ((df["due_date"].dt.date < date.today()) & (df["status"] != "Completed")).sum())
+if h3.button("🌙 / ☀️"):
+    st.session_state.theme = "dark" if st.session_state.theme == "light" else "light"
+    st.rerun()
 
 st.markdown("---")
 
 # =====================================================
-# TABS (ADVANCED UI)
+# LOAD DATA
 # =====================================================
-tab1, tab2, tab3, tab4 = st.tabs(
-    ["📝 Tasks", "🧱 Gantt", "🗓 Calendar", "⚡ Energy Analytics"]
+df = load_tasks()
+
+if st.session_state.role == "User":
+    df = df[df["assignee"] == st.session_state.user]
+
+# =====================================================
+# KPI METRICS
+# =====================================================
+k1, k2, k3, k4 = st.columns(4)
+
+k1.metric("Total Tasks", len(df))
+k2.metric("Completed", (df["status"] == "Completed").sum())
+k3.metric("TBD", df["due_date"].isna().sum())
+k4.metric(
+    "Overdue",
+    ((df["due_date"].dt.date < date.today()) & (df["status"] != "Completed")).sum()
 )
 
 # =====================================================
-# TASK TAB
+# ADD TASK (ADMIN ONLY)
 # =====================================================
-with tab1:
-
-    st.subheader("➕ Assign New Task")
-
-    with st.form("add_task"):
+if st.session_state.role == "Admin":
+    with st.expander("➕ Add New Task"):
         assignee = st.text_input("Assignee")
         department = st.selectbox(
             "Department",
-            ["Solar", "Wind", "Project Planning", "Finance", "Market & Operations", "Asset Management", "Business Development"]
+            ["Solar", "Wind", "Trading", "Operations", "Finance"]
         )
         task = st.text_area("Task Description")
         start_date = st.date_input("Start Date", date.today())
@@ -189,80 +137,91 @@ with tab1:
         status = st.selectbox("Status", ["To Do", "In Progress", "Completed"])
         priority = st.selectbox("Priority", ["Low", "Medium", "High"])
 
-        submit = st.form_submit_button("➕ Assign Task")
+        if st.button("Add Task"):
+            new_task = {
+                "task_id": str(int(datetime.now().timestamp())),
+                "assignee": assignee,
+                "department": department,
+                "task": task,
+                "start_date": start_date,
+                "due_date": due_date,
+                "status": status,
+                "priority": priority,
+                "created_by": st.session_state.user
+            }
+            df = pd.concat([df, pd.DataFrame([new_task])], ignore_index=True)
+            save_tasks(df)
+            st.success("Task added successfully")
+            st.rerun()
 
-    if submit:
-        new_task = {
-            "task_id": str(int(datetime.now().timestamp())),
-            "owner": USER,
-            "assignee": assignee,
-            "department": department,
-            "task": task,
-            "start_date": start_date,
-            "due_date": due_date,
-            "status": status,
-            "priority": priority,
-            "created_at": datetime.now().isoformat()
-        }
-        df = pd.concat([df, pd.DataFrame([new_task])], ignore_index=True)
-        save_tasks(df)
-        st.success("Task assigned successfully")
-        st.rerun()
+# =====================================================
+# EDIT / DELETE TASKS
+# =====================================================
+st.subheader("📝 Task List")
 
-    display_df = df.copy()
-    display_df["Expected Completion"] = display_df["due_date"].apply(
+if not df.empty:
+
+    df["display_due"] = df["due_date"].apply(
         lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "TBD"
     )
 
-    st.dataframe(display_df, use_container_width=True)
-
-# =====================================================
-# GANTT TAB
-# =====================================================
-with tab2:
-    gantt_df = df[df["due_date"].notna()]
-    if gantt_df.empty:
-        st.info("No tasks with defined end dates.")
-    else:
-        fig = px.timeline(
-            gantt_df,
-            x_start="start_date",
-            x_end="due_date",
-            y="task",
-            color="department"
-        )
-        fig.update_yaxes(autorange="reversed")
-        st.plotly_chart(fig, use_container_width=True)
-
-# =====================================================
-# CALENDAR TAB
-# =====================================================
-with tab3:
-    dated = df[df["due_date"].notna()]
-    selected = st.date_input("Select Date", date.today())
-    st.dataframe(dated[dated["due_date"].dt.date == selected], use_container_width=True)
-
-# =====================================================
-# ENERGY ANALYTICS TAB
-# =====================================================
-with tab4:
-
-    st.subheader("⚡ Live Energy Market Snapshot")
-
-    rtm_price = get_live_rtm_price()
-
-    colA, colB = st.columns(2)
-    colA.metric("RTM Market Price (₹/MWh)", rtm_price)
-    colB.metric("Grid Status", random.choice(["Normal", "Tight", "Surplus"]))
-
-    st.markdown("#### 🔎 Insights")
-    st.write(
-        "- Higher RTM prices may impact short-term trading strategies\n"
-        "- Align maintenance tasks during surplus periods\n"
-        "- Use TBD tasks for market-dependent scheduling"
+    selected_id = st.selectbox(
+        "Select Task",
+        df["task_id"],
+        format_func=lambda x: df[df["task_id"] == x]["task"].iloc[0]
     )
 
+    task_row = df[df["task_id"] == selected_id].iloc[0]
+
+    with st.form("edit_task"):
+        new_status = st.selectbox(
+            "Status",
+            ["To Do", "In Progress", "Completed"],
+            index=["To Do", "In Progress", "Completed"].index(task_row["status"])
+        )
+
+        new_due = st.date_input(
+            "Update Expected Completion Date",
+            task_row["due_date"] if pd.notna(task_row["due_date"]) else date.today()
+        )
+
+        save_changes = st.form_submit_button("Save Changes")
+
+    if save_changes:
+        df.loc[df["task_id"] == selected_id, "status"] = new_status
+        df.loc[df["task_id"] == selected_id, "due_date"] = new_due
+        save_tasks(df)
+        st.success("Task updated")
+        st.rerun()
+
+    if st.session_state.role == "Admin":
+        if st.button("❌ Delete Task"):
+            df = df[df["task_id"] != selected_id]
+            save_tasks(df)
+            st.warning("Task deleted")
+            st.rerun()
+
+    st.dataframe(df.drop(columns=["display_due"]), use_container_width=True)
+
+else:
+    st.info("No tasks available")
+
 # =====================================================
-# FOOTER
+# GANTT VIEW
 # =====================================================
-st.caption("Serentica Renewables • Advanced PM • Energy-Aware Operations")
+st.subheader("🧱 Gantt Chart")
+
+gantt_df = df[df["due_date"].notna()]
+
+if not gantt_df.empty:
+    fig = px.timeline(
+        gantt_df,
+        x_start="start_date",
+        x_end="due_date",
+        y="task",
+        color="department"
+    )
+    fig.update_yaxes(autorange="reversed")
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("No tasks with defined completion dates")
