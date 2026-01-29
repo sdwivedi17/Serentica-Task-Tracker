@@ -21,7 +21,7 @@ DATA_FILE = "tasks.csv"
 BG_IMAGE_PATH = "assets/renewable_bg.jpg"
 
 # =====================================================
-# BACKGROUND IMAGE (BASE64)
+# BACKGROUND IMAGE (BASE64 – CLOUD SAFE)
 # =====================================================
 def get_base64_bg(path):
     if not os.path.exists(path):
@@ -32,7 +32,7 @@ def get_base64_bg(path):
 BG_BASE64 = get_base64_bg(BG_IMAGE_PATH)
 
 # =====================================================
-# DATA SETUP (SAFE + NORMALIZED)
+# DATA MODEL
 # =====================================================
 COLUMNS = [
     "task_id", "owner", "assignee", "department",
@@ -50,7 +50,7 @@ def load_tasks():
         if col not in df.columns:
             df[col] = None
 
-    # Normalize task_id (critical for delete)
+    # Normalize IDs
     df["task_id"] = df["task_id"].astype(str)
 
     # Safe date parsing
@@ -163,7 +163,7 @@ st.markdown(
 st.markdown("---")
 
 # =====================================================
-# TASK BOARD (ADD + DELETE + TBD)
+# TASK BOARD
 # =====================================================
 if page == "📝 Task Board":
 
@@ -203,7 +203,7 @@ if page == "📝 Task Board":
             "department": department,
             "task": task,
             "start_date": start_date,
-            "due_date": due_date,   # None = TBD
+            "due_date": due_date,
             "status": status,
             "priority": priority,
             "created_at": datetime.now().isoformat()
@@ -211,9 +211,10 @@ if page == "📝 Task Board":
         df = pd.concat([df, pd.DataFrame([new_task])], ignore_index=True)
         save_tasks(df)
         st.success("Task added successfully")
-        st.rerun()   # 🔄 FORCE REFRESH AFTER ASSIGNMENT
+        st.rerun()
 
-    st.markdown("### 🗑 Delete Task (Safe)")
+    # ------------------ DELETE ------------------
+    st.markdown("### 🗑 Delete Task")
 
     if not df.empty:
         delete_id = st.selectbox("Select Task ID", df["task_id"].tolist())
@@ -227,14 +228,14 @@ if page == "📝 Task Board":
             st.success("Task deleted successfully")
             st.rerun()
 
+    # ------------------ DISPLAY ------------------
     display_df = df.copy()
+    display_df["Expected Completion"] = display_df["due_date"].apply(
+        lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "TBD"
+    )
 
-display_df["Expected Completion"] = display_df["due_date"].apply(
-    lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "TBD"
-)
-
-st.markdown("### 📋 Current Tasks")
-st.dataframe(display_df, use_container_width=True)
+    st.markdown("### 📋 Current Tasks")
+    st.dataframe(display_df, use_container_width=True)
 
 # =====================================================
 # ASSIGNEE VIEW
@@ -295,5 +296,3 @@ elif page == "⚙️ Settings":
 # FOOTER
 # =====================================================
 st.caption("Serentica Renewables • Task Manager • Market & Operations")
-
-
