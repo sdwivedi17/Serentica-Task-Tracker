@@ -16,18 +16,7 @@ st.set_page_config(
 DATA_FILE = "tasks.csv"
 IST = pytz.timezone("Asia/Kolkata")
 
-# =====================================================
-# DATA MODEL
-# =====================================================
-COLUMNS = [
-    "task_id", "assignee", "department", "task",
-    "start_date", "due_date", "status", "priority", "created_by"
-]
-
 STATUS_OPTIONS = ["Pending", "In Progress", "Completed", "On Hold"]
-
-if not os.path.exists(DATA_FILE):
-    pd.DataFrame(columns=COLUMNS).to_csv(DATA_FILE, index=False)
 
 # =====================================================
 # DATA LOAD / SAVE
@@ -37,6 +26,7 @@ def load_tasks():
     df["task_id"] = df["task_id"].astype(str)
     df["start_date"] = pd.to_datetime(df["start_date"], errors="coerce")
     df["due_date"] = pd.to_datetime(df["due_date"], errors="coerce")
+    df["status"] = df["status"].fillna("Pending")
     return df
 
 def save_tasks(df):
@@ -50,28 +40,23 @@ def save_tasks(df):
     df_save.to_csv(DATA_FILE, index=False)
 
 # =====================================================
-# STATUS COLORING (CORE FEATURE)
+# STATUS COLORING
 # =====================================================
 def status_color(val):
-    if val == "Completed":
-        return "background-color: #d4edda"
-    elif val == "In Progress":
-        return "background-color: #d1ecf1"
-    elif val == "Pending":
-        return "background-color: #fff3cd"
-    elif val == "On Hold":
-        return "background-color: #f8d7da"
-    return ""
+    return {
+        "Completed": "background-color:#d4edda",
+        "In Progress": "background-color:#d1ecf1",
+        "Pending": "background-color:#fff3cd",
+        "On Hold": "background-color:#f8d7da",
+    }.get(val, "")
 
 # =====================================================
 # SESSION STATE
 # =====================================================
 if "user" not in st.session_state:
     st.session_state.user = None
-
 if "role" not in st.session_state:
     st.session_state.role = None
-
 if "theme" not in st.session_state:
     st.session_state.theme = "light"
 
@@ -80,7 +65,7 @@ if "theme" not in st.session_state:
 # =====================================================
 if st.session_state.theme == "dark":
     st.markdown(
-        "<style>.stApp { background-color:#0E1117; color:white; }</style>",
+        "<style>.stApp{background-color:#0E1117;color:white}</style>",
         unsafe_allow_html=True
     )
 
@@ -98,7 +83,6 @@ if st.session_state.user is None:
         st.session_state.user = username.strip()
         st.session_state.role = role
         st.rerun()
-
     st.stop()
 
 # =====================================================
@@ -106,11 +90,11 @@ if st.session_state.user is None:
 # =====================================================
 now_ist = datetime.now(IST).strftime("%d %b %Y | %H:%M:%S IST")
 
-h1, h2, h3 = st.columns([5, 2, 1])
-h1.markdown(f"## Hello, {st.session_state.user}")
-h2.markdown(f"🕒 **{now_ist}**")
+c1, c2, c3 = st.columns([5, 2, 1])
+c1.markdown(f"## Hello, {st.session_state.user}")
+c2.markdown(f"🕒 **{now_ist}**")
 
-if h3.button("Dark / Light"):
+if c3.button("Dark / Light"):
     st.session_state.theme = "dark" if st.session_state.theme == "light" else "light"
     st.rerun()
 
@@ -125,7 +109,7 @@ if st.session_state.role == "User":
     df = df[df["assignee"] == st.session_state.user]
 
 # =====================================================
-# KPI METRICS
+# KPI
 # =====================================================
 today_ts = pd.Timestamp(date.today())
 
@@ -143,61 +127,25 @@ k4.metric(
 )
 
 # =====================================================
-# ADD TASK (ADMIN ONLY)
-# =====================================================
-if st.session_state.role == "Admin":
-    with st.expander("➕ Add New Task"):
-        assignee = st.text_input("Assignee")
-        department = st.selectbox(
-            "Department",
-            ["Solar", "Wind", "Market & Operations", "Asset Management", "Finance"]
-        )
-        task = st.text_area("Task Description")
-        start_date = st.date_input("Start Date", date.today())
-
-        tbd = st.checkbox("Expected Completion Date = TBD")
-        due_date = None if tbd else st.date_input(
-            "Expected Completion Date",
-            date.today() + timedelta(days=5)
-        )
-
-        status = st.selectbox("Initial Status", STATUS_OPTIONS)
-        priority = st.selectbox("Priority", ["Low", "Medium", "High"])
-
-        if st.button("Add Task"):
-            new_task = {
-                "task_id": str(int(datetime.now().timestamp())),
-                "assignee": assignee,
-                "department": department,
-                "task": task,
-                "start_date": pd.to_datetime(start_date),
-                "due_date": pd.to_datetime(due_date) if due_date else pd.NaT,
-                "status": status,
-                "priority": priority,
-                "created_by": st.session_state.user
-            }
-            df = pd.concat([df, pd.DataFrame([new_task])], ignore_index=True)
-            save_tasks(df)
-            st.success("Task added successfully")
-            st.rerun()
-
-# =====================================================
-# UPDATE TASK STATUS
+# UPDATE TASK STATUS (FIXED)
 # =====================================================
 st.subheader("🔄 Update Task Status")
 
 if not df.empty:
-    df["status_label"] = df.apply(
+    df["label"] = df.apply(
         lambda x: f"{x['task']} | {x['assignee']} | {x['status']}",
         axis=1
     )
-
-    label_to_id = dict(zip(df["status_label"], df["task_id"]))
+    label_to_id = dict(zip(df["label"], df["task_id"]))
 
     selected_label = st.selectbox("Select Task", list(label_to_id.keys()))
     selected_id = label_to_id[selected_label]
 
     current_status = df.loc[df["task_id"] == selected_id, "status"].iloc[0]
+
+    # 🔑 FIX
+    if current_status not in STATUS_OPTIONS:
+        current_status = "Pending"
 
     new_status = st.selectbox(
         "New Status",
@@ -214,79 +162,23 @@ else:
     st.info("No tasks available")
 
 # =====================================================
-# DELETE TASK (ADMIN ONLY)
-# =====================================================
-if st.session_state.role == "Admin":
-    st.subheader("🗑 Delete Task")
-
-    if not df.empty:
-        df["delete_label"] = df.apply(
-            lambda x: f"{x['task']} | {x['assignee']} | {x['department']}",
-            axis=1
-        )
-
-        label_to_id = dict(zip(df["delete_label"], df["task_id"]))
-
-        del_label = st.selectbox(
-            "Select task to delete",
-            list(label_to_id.keys()),
-            key="delete"
-        )
-
-        del_id = label_to_id[del_label]
-
-        if st.button("❌ Delete Selected Task"):
-            df = df[df["task_id"] != del_id]
-            save_tasks(df)
-            st.warning("Task deleted")
-            st.rerun()
-    else:
-        st.info("No tasks to delete")
-
-# =====================================================
-# TASK TABLE WITH STATUS COLOR CODING
+# TASK TABLE (COLORED)
 # =====================================================
 st.subheader("📋 Task List")
 
 if not df.empty:
     display_df = df.copy()
     display_df["Start Date"] = display_df["start_date"].dt.strftime("%d-%b-%Y")
-    display_df["Expected Completion"] = display_df["due_date"].dt.strftime("%d-%b-%Y")
-    display_df["Expected Completion"] = display_df["Expected Completion"].fillna("TBD")
+    display_df["Expected Completion"] = display_df["due_date"].dt.strftime("%d-%b-%Y").fillna("TBD")
 
-    styled_df = (
+    styled = (
         display_df[
-            [
-                "task", "assignee", "department",
-                "Start Date", "Expected Completion",
-                "status", "priority"
-            ]
+            ["task", "assignee", "department", "Start Date", "Expected Completion", "status", "priority"]
         ]
         .style
         .applymap(status_color, subset=["status"])
     )
 
-    st.dataframe(styled_df, use_container_width=True)
+    st.dataframe(styled, use_container_width=True)
 else:
     st.info("No tasks available")
-
-# =====================================================
-# GANTT VIEW
-# =====================================================
-st.subheader("🧱 Gantt Chart")
-
-gantt_df = df[df["due_date"].notna()]
-
-if not gantt_df.empty:
-    fig = px.timeline(
-        gantt_df,
-        x_start="start_date",
-        x_end="due_date",
-        y="task",
-        color="status"
-    )
-    fig.update_yaxes(autorange="reversed")
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.info("No tasks with defined completion dates")
-
