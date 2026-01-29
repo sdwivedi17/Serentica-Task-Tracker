@@ -139,7 +139,7 @@ if st.session_state.role == "Admin":
         assignee = st.text_input("Assignee")
         department = st.selectbox(
             "Department",
-            ["Solar", "Wind", "Market & Operations", "Asset Management", "Finance"]
+            ["Solar", "Wind", "Asset Management", "Market & Operations", "Finance"]
         )
         task = st.text_area("Task Description")
         start_date = st.date_input("Start Date", date.today())
@@ -200,8 +200,6 @@ if not df.empty:
         save_tasks(df)
         st.success("Status updated")
         st.rerun()
-else:
-    st.info("No tasks available")
 
 # =====================================================
 # DELETE TASK (ADMIN)
@@ -224,11 +222,9 @@ if st.session_state.role == "Admin":
             save_tasks(df)
             st.warning("Task deleted")
             st.rerun()
-    else:
-        st.info("No tasks to delete")
 
 # =====================================================
-# TASK TABLE (COLORED)
+# TASK TABLE
 # =====================================================
 st.subheader("📋 Task List")
 
@@ -239,8 +235,9 @@ if not df.empty:
 
     styled_df = (
         display_df[
-            ["task", "assignee", "department", "Start Date",
-             "Expected Completion", "status", "priority"]
+            ["task", "assignee", "department",
+             "Start Date", "Expected Completion",
+             "status", "priority"]
         ]
         .style
         .applymap(status_color, subset=["status"])
@@ -251,20 +248,65 @@ else:
     st.info("No tasks available")
 
 # =====================================================
-# GANTT CHART
+# GANTT CHART (WITH ASSIGNEE)
 # =====================================================
 st.subheader("🧱 Gantt Chart")
 
-gantt_df = df[df["due_date"].notna()]
+gantt_df = df[df["due_date"].notna()].copy()
+gantt_df["Task Label"] = gantt_df["task"] + " (" + gantt_df["assignee"] + ")"
+
 if not gantt_df.empty:
     fig = px.timeline(
         gantt_df,
         x_start="start_date",
         x_end="due_date",
-        y="task",
+        y="Task Label",
         color="status"
     )
     fig.update_yaxes(autorange="reversed")
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("No tasks with defined completion dates")
+
+# =====================================================
+# ANALYTICS DASHBOARD
+# =====================================================
+st.subheader("📊 Task Analytics")
+
+a1, a2 = st.columns(2)
+
+with a1:
+    st.plotly_chart(
+        px.pie(df, names="status", title="Tasks by Status"),
+        use_container_width=True
+    )
+
+with a2:
+    st.plotly_chart(
+        px.pie(df, names="department", title="Tasks by Department"),
+        use_container_width=True
+    )
+
+b1, b2 = st.columns(2)
+
+with b1:
+    st.plotly_chart(
+        px.bar(
+            df,
+            x="assignee",
+            title="Tasks per Assignee",
+            color="status"
+        ),
+        use_container_width=True
+    )
+
+with b2:
+    st.plotly_chart(
+        px.bar(
+            df,
+            x="priority",
+            title="Tasks by Priority",
+            color="status"
+        ),
+        use_container_width=True
+    )
